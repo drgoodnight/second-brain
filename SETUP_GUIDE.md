@@ -257,7 +257,14 @@ display name:
    second-brain
    ```
 
-2. **Get your connection address** (save this for connecting from your phone):
+2. **Enable auto-accept for incoming connections:**
+   ```
+   /auto_accept on
+   ```
+   
+   This is **critical** - without this, you'll need to manually accept every connection request from your phone or other devices.
+
+3. **Get your connection address** (save this for connecting from your phone):
    ```
    /address
    ```
@@ -270,7 +277,7 @@ display name:
    
    **Copy and save this entire link** - you'll need it to connect from your phone's SimpleX app.
 
-3. **Exit SimpleX:**
+4. **Exit SimpleX:**
    ```
    /quit
    ```
