@@ -9,9 +9,9 @@ A complete guide to deploying your self-hosted AI personal assistant.
 1. [Prerequisites](#prerequisites)
 2. [Installation](#installation)
 3. [First-Time Configuration](#first-time-configuration)
-4. [Importing Workflows](#importing-workflows)
-5. [Migrating Existing Data](#migrating-existing-data)
-6. [Connecting SimpleX Chat](#connecting-simplex-chat)
+4. [Connecting SimpleX Chat](#connecting-simplex-chat)
+5. [Importing Workflows](#importing-workflows)
+6. [Migrating Existing Data](#migrating-existing-data)
 7. [Verification](#verification)
 8. [Troubleshooting](#troubleshooting)
 9. [Useful Commands](#useful-commands)
@@ -211,6 +211,144 @@ docker compose restart n8n
 
 ---
 
+## Connecting SimpleX Chat
+
+SimpleX Chat is your interface to the Second Brain. **This requires a one-time manual setup.**
+
+### Why Manual Setup?
+
+SimpleX CLI requires an interactive terminal (TTY) to create a user profile. It cannot be automated because it prompts for a display name during first-time setup. This only needs to be done once - after that, the profile persists and the container starts automatically.
+
+### Step 1: Stop the SimpleX Container
+
+After initial `docker compose up -d`, the SimpleX container will show an error because no profile exists yet. This is expected.
+
+```bash
+docker compose stop simplex-chat-cli
+```
+
+### Step 2: Create the SimpleX Profile (Interactive)
+
+Run SimpleX interactively to create your profile:
+
+```bash
+docker compose run -it --rm simplex-chat-cli \
+  simplex-chat -d /home/simplex/.simplex/simplex
+```
+
+> **Important:** The `-d` flag specifies a database **name prefix**, not a directory. Using `-d /home/simplex/.simplex/simplex` creates the database files inside the mounted volume at `data/simplex/`.
+
+### Step 3: Complete the Setup Prompts
+
+When SimpleX starts, you'll see:
+
+```
+SimpleX Chat v6.4.7.1
+...
+No user profiles found, it will be created now.
+Please choose your display name.
+It will be sent to your contacts when you connect.
+It is only stored on your device and you can change it later.
+display name:
+```
+
+1. **Enter your bot's display name:**
+   ```
+   second-brain
+   ```
+
+2. **Get your connection address** (save this for connecting from your phone):
+   ```
+   /address
+   ```
+   
+   You'll see output like:
+   ```
+   Your chat address:
+   simplex:/invite#/?v=2-7&smp=...
+   ```
+   
+   **Copy and save this entire link** - you'll need it to connect from your phone's SimpleX app.
+
+3. **Exit SimpleX:**
+   ```
+   /quit
+   ```
+
+### Step 4: Verify Profile Was Created
+
+Check that the database files now exist:
+
+```bash
+ls -la data/simplex/
+```
+
+You should see files including:
+```
+simplex_chat.db
+simplex_agent.db
+simplex_chat.db-shm
+simplex_chat.db-wal
+```
+
+### Step 5: Start All Services
+
+```bash
+docker compose up -d
+```
+
+### Step 6: Verify SimpleX is Running
+
+```bash
+docker compose logs simplex-chat-cli
+```
+
+You should now see:
+```
+============================================
+SimpleX Chat CLI Starting
+============================================
+Port: 5225
+Log Level: warn
+Data Dir: /home/simplex/.simplex
+DB Prefix: /home/simplex/.simplex/simplex
+Bot Name: second-brain
+============================================
+
+✓ Profile found: /home/simplex/.simplex/simplex_chat.db
+
+Starting SimpleX Chat with WebSocket API on port 5225...
+```
+
+### Step 7: Connect from Your Phone
+
+1. **Install SimpleX Chat** on your phone (iOS App Store / Android Play Store)
+
+2. **Add a new contact:**
+   - Tap the **+** button
+   - Select "Connect via link" or scan QR code
+   - Paste the address you saved in Step 3 (the `simplex:/invite#/...` link)
+
+3. **Accept the connection** when prompted
+
+4. **Send a test message:**
+   ```
+   what's on my calendar today?
+   ```
+
+### Step 8: Verify Bridge is Working
+
+```bash
+docker compose logs -f simplex-bridge
+```
+
+You should see messages being forwarded to n8n:
+```
+[OK] Posted: contactId=1 itemId=43 from="YourName" text='what's on my calendar today?' | Response: {"success":true}
+```
+
+---
+
 ## Importing Workflows
 
 ### Setting Up Workflow Folders
@@ -326,52 +464,6 @@ docker compose restart
 
 ---
 
-## Connecting SimpleX Chat
-
-SimpleX Chat is your interface to the Second Brain.
-
-### Step 1: Check SimpleX is Running
-
-```bash
-docker compose logs simplex-chat-cli
-```
-
-Look for: `simplex-chat: listening on port 5225`
-
-### Step 2: Get Your Bot's Connection Link
-
-```bash
-# Connect to SimpleX container
-docker exec -it simplex-chat-cli simplex-chat
-
-# Inside SimpleX, create an address:
-/address
-
-# Copy the displayed link (starts with simplex:/)
-# Type /quit to exit
-```
-
-### Step 3: Connect from Your Phone
-
-1. **Install SimpleX Chat** on your phone (iOS/Android)
-
-2. **Scan or paste the connection link**
-
-3. **Send a test message:**
-   ```
-   what's on my calendar today?
-   ```
-
-### Step 4: Verify Bridge is Working
-
-```bash
-docker compose logs -f simplex-bridge
-```
-
-You should see messages being forwarded to n8n.
-
----
-
 ## Verification
 
 ### Check All Services Are Running
@@ -442,6 +534,35 @@ docker compose down
 docker compose build --no-cache
 docker compose up -d
 ```
+
+### SimpleX Shows "No Profile Found" Error
+
+This is expected on first run. Follow the [Connecting SimpleX Chat](#connecting-simplex-chat) section to create the profile interactively.
+
+**Quick fix:**
+
+```bash
+# 1. Stop the container
+docker compose stop simplex-chat-cli
+
+# 2. Create profile interactively
+docker compose run -it --rm simplex-chat-cli \
+  simplex-chat -d /home/simplex/.simplex/simplex
+
+# 3. Enter display name: second-brain
+# 4. Type /quit to exit
+
+# 5. Start all services
+docker compose up -d
+```
+
+### SimpleX Profile Lost After Restart
+
+If your SimpleX profile disappears after container restart, check that:
+
+1. **Volume mount exists:** `data/simplex/` directory exists on host
+2. **Files are present:** `ls -la data/simplex/` shows `.db` files
+3. **Permissions are correct:** `sudo chown -R $USER:$USER data/simplex/`
 
 ### n8n Can't Connect to Nextcloud
 
@@ -549,8 +670,22 @@ docker exec -it n8n /bin/bash
 # Shell into Nextcloud
 docker exec -it nextcloud /bin/bash
 
-# SimpleX CLI
-docker exec -it simplex-chat-cli simplex-chat
+# SimpleX CLI (if profile already exists)
+docker exec -it simplex-chat-cli simplex-chat -d /home/simplex/.simplex/simplex
+```
+
+### SimpleX Management
+
+```bash
+# Get your connection address again
+docker exec -it simplex-chat-cli simplex-chat -d /home/simplex/.simplex/simplex
+# Then type: /address
+# Then type: /quit
+
+# Reset SimpleX profile (start fresh)
+docker compose stop simplex-chat-cli
+sudo rm -rf data/simplex/*
+# Then follow "Connecting SimpleX Chat" section again
 ```
 
 ---
