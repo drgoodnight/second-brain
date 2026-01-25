@@ -1,80 +1,70 @@
 #!/bin/bash
 #
-# Ollama Model Initialization Script
-# Pulls required models for Second Brain on first run
+# Initialize Ollama models for Second Brain
+# This script runs once on first setup to download the default model.
 #
 
 set -e
 
-OLLAMA_HOST="${OLLAMA_HOST:-ollama:11434}"
-OLLAMA_MODEL="${OLLAMA_MODEL:-gemma3:12b}"
+MODEL="${OLLAMA_MODEL:-gemma3:12b}"
+OLLAMA_API="${OLLAMA_HOST:-ollama:11434}"
 
-echo "============================================"
-echo "Second Brain - Ollama Model Initialization"
-echo "============================================"
-echo "Ollama Host: $OLLAMA_HOST"
-echo "Model: $OLLAMA_MODEL"
+echo "╔════════════════════════════════════════════════════════╗"
+echo "║     Ollama Model Initialization                        ║"
+echo "╚════════════════════════════════════════════════════════╝"
+echo ""
+echo "Model: $MODEL"
+echo "Ollama API: $OLLAMA_API"
 echo ""
 
-# Wait for Ollama to be fully ready
-echo "Waiting for Ollama API to be ready..."
-until curl -sf "http://$OLLAMA_HOST/api/tags" > /dev/null 2>&1; do
-    echo "  Waiting..."
+# Wait for Ollama to be ready (with retry logic)
+echo "Waiting for Ollama to be ready..."
+MAX_ATTEMPTS=30
+ATTEMPT=0
+
+while [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
+    if curl -sf "http://${OLLAMA_API}/api/tags" > /dev/null 2>&1; then
+        echo "✓ Ollama is ready"
+        break
+    fi
+    ATTEMPT=$((ATTEMPT + 1))
+    echo "  Waiting for Ollama... (attempt $ATTEMPT/$MAX_ATTEMPTS)"
     sleep 5
 done
-echo "✓ Ollama API is ready"
-echo ""
 
-# Check if model is already pulled
-echo "Checking for existing models..."
-MODEL_BASE=$(echo "$OLLAMA_MODEL" | cut -d':' -f1)
-EXISTING=$(curl -sf "http://$OLLAMA_HOST/api/tags" | grep -o '"name":"[^"]*"' | grep -c "$MODEL_BASE" || true)
-
-if [ "$EXISTING" -gt 0 ]; then
-    echo "✓ Model $OLLAMA_MODEL already present"
-    curl -sf "http://$OLLAMA_HOST/api/tags" | grep -o '"name":"[^"]*"' | tr ',' '\n'
+if [ $ATTEMPT -eq $MAX_ATTEMPTS ]; then
+    echo "❌ Ollama did not become ready in time"
     echo ""
-else
-    echo "Pulling $OLLAMA_MODEL..."
-    echo "This will download the model and may take 10-30 minutes depending on connection."
-    echo ""
-    
-    # Pull the model
-    curl -X POST "http://$OLLAMA_HOST/api/pull" \
-        -H "Content-Type: application/json" \
-        -d "{\"name\": \"$OLLAMA_MODEL\", \"stream\": false}" \
-        --max-time 3600
-    
-    echo ""
-    echo "✓ $OLLAMA_MODEL pulled successfully"
+    echo "You can manually pull the model later:"
+    echo "  docker exec ollama ollama pull $MODEL"
+    exit 1
 fi
 
-# Verify the model works with a quick test
+# Check if model already exists
 echo ""
-echo "Running quick model test..."
-RESPONSE=$(curl -sf "http://$OLLAMA_HOST/api/generate" \
-    -H "Content-Type: application/json" \
-    -d "{
-        \"model\": \"$OLLAMA_MODEL\",
-        \"prompt\": \"Say OK if you are working.\",
-        \"stream\": false,
-        \"options\": {\"num_predict\": 10}
-    }" | grep -o '"response":"[^"]*"' | head -1)
-
-if echo "$RESPONSE" | grep -qi "ok\|working\|yes"; then
-    echo "✓ Model test passed"
-else
-    echo "⚠ Model responded: $RESPONSE"
-    echo "  Model is loaded but response was unexpected. This is usually fine."
+echo "Checking for existing model..."
+if curl -sf "http://${OLLAMA_API}/api/tags" | grep -q "\"name\":\"${MODEL}\""; then
+    echo "✓ Model $MODEL already downloaded"
+    echo ""
+    echo "To update the model, run:"
+    echo "  docker exec ollama ollama pull $MODEL"
+    exit 0
 fi
 
+# Pull the model
 echo ""
-echo "============================================"
-echo "Initialization Complete!"
-echo "============================================"
+echo "Downloading $MODEL..."
+echo "This may take 10-30 minutes depending on your connection."
 echo ""
-echo "Ollama is ready at: http://$OLLAMA_HOST"
-echo "Model: $OLLAMA_MODEL"
+
+# Use ollama CLI to pull (connects to the ollama service)
+OLLAMA_HOST="http://${OLLAMA_API}" ollama pull "$MODEL"
+
 echo ""
-echo "n8n can now access Ollama at: http://ollama:11434"
+echo "════════════════════════════════════════════════════════"
+echo "✓ Model $MODEL downloaded successfully!"
+echo "════════════════════════════════════════════════════════"
+echo ""
+echo "Test with:"
+echo "  curl http://localhost:11434/api/generate -d '{\"model\":\"$MODEL\",\"prompt\":\"Hello\"}'"
 echo ""

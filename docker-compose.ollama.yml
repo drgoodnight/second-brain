@@ -39,21 +39,25 @@ services:
               count: 1
               capabilities: [gpu]
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      test: ["CMD-SHELL", "curl -sf http://localhost:11434/api/tags || exit 1"]
       interval: 30s
       timeout: 10s
-      retries: 3
-      start_period: 30s
+      retries: 5
+      start_period: 60s
 
   # ============================================
   # OLLAMA INIT - Model Download (runs once)
   # ============================================
+  # 
+  # NOTE: If this fails due to healthcheck timing, you can manually pull:
+  #   docker exec ollama ollama pull gemma3:12b
+  #
   ollama-init:
     image: ollama/ollama:latest
     container_name: ollama-init
     depends_on:
       ollama:
-        condition: service_healthy
+        condition: service_started  # Changed from service_healthy for reliability
     volumes:
       - ./data/ollama:/root/.ollama
       - ./ollama/init-models.sh:/init-models.sh:ro
