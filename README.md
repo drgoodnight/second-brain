@@ -23,7 +23,7 @@ This project is inspired by [Nate's Second Brain system](https://natesnewsletter
 | Slack | SimpleX Chat | End-to-end encrypted, no metadata |
 | Zapier | n8n | Self-hosted, no cloud dependency |
 | Notion | Obsidian API | Local markdown files, full ownership |
-| Cloud AI | Your choice | Use local LLMs or cloud APIs |
+| Cloud AI | Local LLMs or cloud APIs | Optional fully local AI with Ollama |
 | *(not included)* | Nextcloud Calendar | Full calendar management via natural language |
 
 Same powerful workflow, plus calendar integration—everything runs on your own hardware.
@@ -60,7 +60,12 @@ SimpleX Chat ──────────► │  n8n Hub                     
                          │    ├── Notes Agent ────► Obsidian API   │
                          │    ├── Search Agent ───► Obsidian API   │
                          │    └── Delete Agent ───► Obsidian API   │
-                         │                                         │
+                         │              │                          │
+                         │              ▼                          │
+                         │         ┌─────────┐                     │
+                         │         │ Ollama  │ (optional)          │
+                         │         │ Local AI│                     │
+                         │         └─────────┘                     │
                          └─────────────────────────────────────────┘
                                     All Local / Self-Hosted
 ```
@@ -74,6 +79,7 @@ SimpleX Chat ──────────► │  n8n Hub                     
 | Obsidian API | 8765 | Notes management (5 databases) |
 | SimpleX Chat | 5225 | Encrypted messaging interface |
 | SimpleX Bridge | - | Connects SimpleX ↔ n8n |
+| Ollama | 11434 | Local AI inference (optional) |
 
 ---
 
@@ -124,11 +130,42 @@ User: "fix: project"  → Moves last review item to Projects database
 
 ---
 
+## Local AI Module (Optional)
+
+For complete privacy, you can run AI inference locally using Ollama and Gemma 3 12B. This eliminates all external API calls.
+
+### Requirements
+
+- NVIDIA GPU with 12GB+ VRAM (e.g., RTX 4060 Ti 16GB, RTX 3080)
+- NVIDIA Container Toolkit installed
+
+### Quick Setup
+
+```bash
+# Enable local AI
+./scripts/enable-local-ai.sh
+
+# Run with local AI
+docker compose -f docker-compose.yml -f docker-compose.ollama.yml up -d
+```
+
+### Run Without Local AI (Cloud APIs)
+
+```bash
+# Standard startup (uses OpenAI or other cloud AI)
+docker compose up -d
+```
+
+See [ollama/README.md](ollama/README.md) for detailed local AI setup instructions.
+
+---
+
 ## Directory Structure
 
 ```
 second-brain/
-├── docker-compose.yml      # All services
+├── docker-compose.yml      # Core services
+├── docker-compose.ollama.yml # Optional local AI overlay
 ├── .env.example            # Template (committed)
 ├── .env                    # Secrets (gitignored)
 ├── README.md
@@ -146,11 +183,20 @@ second-brain/
 │   ├── main.py
 │   └── requirements.txt
 │
+├── ollama/                 # Local AI module (optional)
+│   ├── README.md           # Quick start guide
+│   ├── LOCAL_AI_SETUP.md   # Detailed setup
+│   ├── N8N_OLLAMA_CONFIG.md # n8n workflow changes
+│   ├── init-models.sh      # Model download script
+│   └── prompts/
+│       └── GEMMA3_PROMPTS.md
+│
 ├── scripts/
 │   ├── bridge.py           # SimpleX ↔ n8n connector
 │   ├── setup.sh            # First-time setup
 │   ├── backup.sh           # Backup script
-│   └── restore.sh          # Restore script
+│   ├── restore.sh          # Restore script
+│   └── enable-local-ai.sh  # Local AI setup script
 │
 ├── n8n/
 │   └── workflows/          # Exported n8n workflow JSONs
@@ -161,7 +207,8 @@ second-brain/
     ├── nextcloud-db/
     ├── vault/
     ├── simplex/
-    └── simplex-bridge/
+    ├── simplex-bridge/
+    └── ollama/             # Model storage (~12GB)
 ```
 
 ---
@@ -180,6 +227,11 @@ NEXTCLOUD_PASSWORD=your-app-password  # For CalDAV access
 
 # Timezone
 TZ=Europe/London
+
+# Local AI (optional - only if using Ollama)
+OLLAMA_HOST=ollama
+OLLAMA_PORT=11434
+OLLAMA_MODEL=gemma3:12b
 ```
 
 ---
@@ -221,8 +273,9 @@ cloudflared tunnel --url http://localhost:5678
 ## Documentation
 
 - [Setup Guide](SETUP_GUIDE.md) - Complete installation instructions
-- [Nate's Original Article](https://natesnewsletter.substack.com/p/grab-the-system-that-closes-open) - The inspiration for this project
 - [SimpleX Bridge](SIMPLEX_BRIDGE.md) - Technical details on the messaging bridge
+- [Local AI Setup](ollama/README.md) - Optional local AI module
+- [Nate's Original Article](https://natesnewsletter.substack.com/p/grab-the-system-that-closes-open) - The inspiration for this project
 
 ---
 
@@ -240,6 +293,14 @@ docker compose logs -f n8n
 ```bash
 docker compose logs -f simplex-bridge
 docker compose logs -f simplex-chat-cli
+```
+
+### Ollama not responding
+
+```bash
+docker compose logs -f ollama
+# Check GPU access
+nvidia-smi
 ```
 
 ### Permission errors
@@ -272,3 +333,5 @@ MIT License - See LICENSE file for details.
 - [SimpleX Chat](https://simplex.chat/) for truly private messaging
 - [Nextcloud](https://nextcloud.com/) for self-hosted calendar
 - [Obsidian](https://obsidian.md/) for the knowledge management philosophy
+- [Ollama](https://ollama.ai/) for easy local LLM deployment
+- [Google DeepMind](https://deepmind.google/) for the Gemma model family
