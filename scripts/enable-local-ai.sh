@@ -68,10 +68,10 @@ if ! docker info 2>/dev/null | grep -q "Runtimes.*nvidia"; then
 fi
 echo "✓ NVIDIA Container Toolkit configured"
 
-# Test Docker GPU access
+# Test Docker GPU access (using ubuntu image which is more reliable)
 echo ""
 echo "Testing Docker GPU access..."
-if ! docker run --rm --gpus all nvidia/cuda:12.0-base nvidia-smi &> /dev/null; then
+if ! docker run --rm --gpus all ubuntu nvidia-smi &> /dev/null; then
     echo "❌ Docker cannot access GPU."
     echo "  Try: sudo systemctl restart docker"
     exit 1
@@ -110,9 +110,9 @@ echo "Updating .env file..."
 if [ -f "$PROJECT_ROOT/.env" ]; then
     if ! grep -q "OLLAMA_HOST" "$PROJECT_ROOT/.env"; then
         echo "" >> "$PROJECT_ROOT/.env"
-        echo "# ═══════════════════════════════════════════════════════════════" >> "$PROJECT_ROOT/.env"
+        echo "# ══════════════════════════════════════════════════════════════════" >> "$PROJECT_ROOT/.env"
         echo "# LOCAL AI (OLLAMA)" >> "$PROJECT_ROOT/.env"
-        echo "# ═══════════════════════════════════════════════════════════════" >> "$PROJECT_ROOT/.env"
+        echo "# ══════════════════════════════════════════════════════════════════" >> "$PROJECT_ROOT/.env"
         echo "OLLAMA_HOST=ollama" >> "$PROJECT_ROOT/.env"
         echo "OLLAMA_PORT=11434" >> "$PROJECT_ROOT/.env"
         echo "OLLAMA_MODEL=gemma3:12b" >> "$PROJECT_ROOT/.env"
@@ -127,9 +127,12 @@ else
     exit 1
 fi
 
-# Network will be created by main docker-compose.yml
+# Create the network if it doesn't exist (for overlay to work)
 echo ""
-echo "✓ Configuration ready"
+echo "Ensuring network exists..."
+docker network inspect second-brain-net >/dev/null 2>&1 || \
+    docker network create second-brain-net
+echo "✓ Network second-brain-net ready"
 
 # Start Ollama
 echo ""
