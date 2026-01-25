@@ -30,7 +30,7 @@
     {
       "parameters": {
         "method": "PUT",
-        "url": "={{ 'http://nextcloud-nextcloud-1/remote.php/dav/calendars/cypherdoc/work/' + encodeURIComponent($json.uid) + '.ics' }}",
+        "url": "={{ 'http://nextcloud/remote.php/dav/calendars/cypherdoc/work/' + encodeURIComponent($json.uid) + '.ics' }}",
         "authentication": "genericCredentialType",
         "genericAuthType": "httpBasicAuth",
         "sendHeaders": true,

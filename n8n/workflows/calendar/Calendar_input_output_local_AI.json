@@ -36,19 +36,19 @@
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
-        -304,
-        -224
+        -1344,
+        192
       ],
-      "id": "baed8f4b-6976-49d0-81df-6689bcacaeac",
+      "id": "1aa971c8-c5bd-4783-9c18-d4cc449d1eab",
       "name": "Prepare_Calendar_Input"
     },
     {
       "parameters": {
         "workflowId": {
           "__rl": true,
-          "value": "a6OVZcblBcUy66iu",
+          "value": "NBGxXNizyKNbxJ7a0k6sD",
           "mode": "list",
-          "cachedResultUrl": "/workflow/a6OVZcblBcUy66iu",
+          "cachedResultUrl": "/workflow/NBGxXNizyKNbxJ7a0k6sD",
           "cachedResultName": "calendar_agent"
         },
         "workflowInputs": {
@@ -66,33 +66,11 @@
       "type": "n8n-nodes-base.executeWorkflow",
       "typeVersion": 1.3,
       "position": [
-        1040,
-        -416
+        0,
+        0
       ],
-      "id": "2dc6e362-1ed9-49fd-a497-e1c3e409e94c",
+      "id": "fc95cabc-a028-42bb-b182-1302baf88e3a",
       "name": "Execute_Calendar_Agent"
-    },
-    {
-      "parameters": {
-        "contactId": "={{ $json.contactId || $('Classify_Request').item.json.contactId }}",
-        "message": "={{ $json.reply || $json.message || \"✅ Event added: \" + $('Classify_Request').item.json.request }}"
-      },
-      "type": "CUSTOM.simplexity",
-      "typeVersion": 1,
-      "position": [
-        1264,
-        64
-      ],
-      "id": "9abf0f1c-5652-41ad-9e7e-4840a00604b6",
-      "name": "Reply_SimpleX",
-      "alwaysOutputData": false,
-      "executeOnce": false,
-      "credentials": {
-        "simplexityApi": {
-          "id": "1IbRnnqpzRG52kSA",
-          "name": "simplex"
-        }
-      }
     },
     {
       "parameters": {
@@ -101,10 +79,10 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        -80,
-        -224
+        -1120,
+        192
       ],
-      "id": "93a8ceb8-b83a-43b9-8210-88fb17f41ddb",
+      "id": "ccb70d13-45b0-42fd-834f-c690af59fd13",
       "name": "Classify_Request"
     },
     {
@@ -192,10 +170,10 @@
       "type": "n8n-nodes-base.switch",
       "typeVersion": 3.4,
       "position": [
-        144,
-        -240
+        -896,
+        176
       ],
-      "id": "b391a254-2faf-4e02-8d9a-ab4319004237",
+      "id": "e20eaaf2-c710-49a8-9736-9264c0acd633",
       "name": "Route_Action"
     },
     {
@@ -205,36 +183,23 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1040,
-        -224
+        0,
+        192
       ],
-      "id": "3a26bce8-1267-4411-b0f7-6d6f363431e0",
+      "id": "6e6c6d87-12bd-4db6-aae4-21fef9d83848",
       "name": "Format_Calendar_Response"
     },
     {
       "parameters": {
-        "jsCode": "const password = $env.NEXTCLOUD_PASSWORD;\nconst startDate = $json.startDate.replace(/-/g, '');\nconst endDate = $json.endDate.replace(/-/g, '');\n\nconst body = `<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<C:calendar-query xmlns:D=\"DAV:\" xmlns:C=\"urn:ietf:params:xml:ns:caldav\">\n  <D:prop>\n    <D:getetag/>\n    <C:calendar-data/>\n  </D:prop>\n  <C:filter>\n    <C:comp-filter name=\"VCALENDAR\">\n      <C:comp-filter name=\"VEVENT\">\n        <C:time-range start=\"${startDate}T000000Z\" end=\"${endDate}T235959Z\"/>\n      </C:comp-filter>\n    </C:comp-filter>\n  </C:filter>\n</C:calendar-query>`;\n\nconst response = await this.helpers.httpRequest({\n  method: 'REPORT',\n  url: 'http://nextcloud-nextcloud-1/remote.php/dav/calendars/cypherdoc/work/',\n  headers: {\n    'Content-Type': 'application/xml; charset=utf-8',\n    'Depth': '1',\n    'Authorization': 'Basic ' + Buffer.from('cypherdoc:' + password).toString('base64')\n  },\n  body: body,\n  returnFullResponse: true\n});\n\nreturn {\n  json: {\n    data: response.body,\n    statusCode: response.statusCode,\n    contactId: $json.contactId,\n    startDate: $json.startDate,\n    endDate: $json.endDate  // Added: pass endDate forward for formatting\n  }\n};"
+        "jsCode": "const searchDate = $json.startDate;\nconst searchTerm = $json.searchTerm || '';\nconst searchTime = $json.searchTime || '';\n\n// Use environment variables - no hardcoded credentials\nconst calendarUrl = $env.NEXTCLOUD_URL;\nconst username = $env.NEXTCLOUD_USERNAME;\nconst password = $env.NEXTCLOUD_PASSWORD;\n\n// Format date for CalDAV query\nconst formattedDate = searchDate.replace(/-/g, '');\n\nconst body = `<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<C:calendar-query xmlns:D=\"DAV:\" xmlns:C=\"urn:ietf:params:xml:ns:caldav\">\n  <D:prop>\n    <D:getetag/>\n    <C:calendar-data/>\n  </D:prop>\n  <C:filter>\n    <C:comp-filter name=\"VCALENDAR\">\n      <C:comp-filter name=\"VEVENT\">\n        <C:time-range start=\"${formattedDate}T000000Z\" end=\"${formattedDate}T235959Z\"/>\n      </C:comp-filter>\n    </C:comp-filter>\n  </C:filter>\n</C:calendar-query>`;\n\nlet response;\ntry {\n  response = await this.helpers.httpRequest({\n    method: 'REPORT',\n    url: calendarUrl,\n    headers: {\n      'Content-Type': 'application/xml; charset=utf-8',\n      'Depth': '1',\n      'Authorization': 'Basic ' + Buffer.from(username + ':' + password).toString('base64')\n    },\n    body: body,\n    returnFullResponse: true\n  });\n} catch (error) {\n  return {\n    json: {\n      ...$json,\n      matches: [],\n      matchCount: 0,\n      error: `Calendar query failed: ${error.message}`\n    }\n  };\n}\n\n// Parse the XML response to extract events\nconst events = [];\nconst responseBody = response.body || response;\n\nconst hrefRegex = /<d:href>([^<]+)<\\/d:href>/gi;\nconst calDataRegex = /<cal:calendar-data[^>]*>([\\s\\S]*?)<\\/cal:calendar-data>/gi;\n\nlet hrefMatches = [...responseBody.matchAll(hrefRegex)];\nlet calDataMatches = [...responseBody.matchAll(calDataRegex)];\n\nfor (let i = 0; i < calDataMatches.length; i++) {\n  const icsData = calDataMatches[i][1];\n  const href = hrefMatches[i]?.[1] || '';\n  \n  // Extract SUMMARY\n  const summaryMatch = icsData.match(/SUMMARY:(.+?)(?:\\r?\\n|$)/);\n  const summary = summaryMatch ? summaryMatch[1].trim() : 'Untitled';\n  \n  // Extract DTSTART\n  const dtstartMatch = icsData.match(/DTSTART[^:]*:(\\d{4})(\\d{2})(\\d{2})T?(\\d{2})?(\\d{2})?/);\n  let startTime = '';\n  let displayTime = '';\n  if (dtstartMatch) {\n    if (dtstartMatch[4] && dtstartMatch[5]) {\n      startTime = `${dtstartMatch[4]}:${dtstartMatch[5]}`;\n      let hour = parseInt(dtstartMatch[4]);\n      const ampm = hour >= 12 ? 'PM' : 'AM';\n      hour = hour % 12 || 12;\n      displayTime = `${hour}:${dtstartMatch[5]} ${ampm}`;\n    } else {\n      displayTime = 'All day';\n    }\n  }\n  \n  // Extract UID\n  const uidMatch = icsData.match(/UID:(.+?)(?:\\r?\\n|$)/);\n  const uid = uidMatch ? uidMatch[1].trim() : '';\n  \n  events.push({\n    summary,\n    startTime,\n    displayTime,\n    href,\n    uid,\n    icsData\n  });\n}\n\n// Filter matches based on search criteria\nlet matches = events.filter(event => {\n  const summaryLower = event.summary.toLowerCase();\n  const searchLower = searchTerm.toLowerCase();\n  \n  // Bidirectional matching: \n  // - searchTerm in summary (\"test\" matches \"Test Event\")\n  // - summary in searchTerm (\"Test\" matches \"delete test event\")\n  const termMatch = !searchTerm || \n    summaryLower.includes(searchLower) ||\n    searchLower.includes(summaryLower);\n  \n  const timeMatch = !searchTime || \n    event.startTime === searchTime;\n  \n  if (searchTerm && searchTime) {\n    return termMatch && timeMatch;\n  }\n  \n  return termMatch || (searchTime && timeMatch);\n});\n\nif (!searchTerm && !searchTime) {\n  matches = events;\n}\n\nreturn {\n  json: {\n    ...$json,\n    matches: matches,\n    matchCount: matches.length,\n    allEventsOnDay: events.length\n  }\n};"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        816,
-        -224
+        -672,
+        672
       ],
-      "id": "436396da-7845-499b-9653-9fe8ca7e9450",
-      "name": "Query_Calendar1"
-    },
-    {
-      "parameters": {
-        "jsCode": "const searchDate = $json.startDate;\nconst searchTerm = $json.searchTerm || '';\nconst searchTime = $json.searchTime || '';\nconst password = $env.NEXTCLOUD_PASSWORD;\n\n// Format date for CalDAV query\nconst formattedDate = searchDate.replace(/-/g, '');\n\nconst body = `<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<C:calendar-query xmlns:D=\"DAV:\" xmlns:C=\"urn:ietf:params:xml:ns:caldav\">\n  <D:prop>\n    <D:getetag/>\n    <C:calendar-data/>\n  </D:prop>\n  <C:filter>\n    <C:comp-filter name=\"VCALENDAR\">\n      <C:comp-filter name=\"VEVENT\">\n        <C:time-range start=\"${formattedDate}T000000Z\" end=\"${formattedDate}T235959Z\"/>\n      </C:comp-filter>\n    </C:comp-filter>\n  </C:filter>\n</C:calendar-query>`;\n\nlet response;\ntry {\n  response = await this.helpers.httpRequest({\n    method: 'REPORT',\n    url: 'http://nextcloud-nextcloud-1/remote.php/dav/calendars/cypherdoc/work/',\n    headers: {\n      'Content-Type': 'application/xml; charset=utf-8',\n      'Depth': '1',\n      'Authorization': 'Basic ' + Buffer.from('cypherdoc:' + password).toString('base64')\n    },\n    body: body,\n    returnFullResponse: true\n  });\n} catch (error) {\n  return {\n    json: {\n      ...$json,\n      matches: [],\n      matchCount: 0,\n      error: `Calendar query failed: ${error.message}`\n    }\n  };\n}\n\n// Parse the XML response to extract events\nconst events = [];\nconst responseBody = response.body || response;\n\n// Use lowercase namespaces to match Nextcloud's response\nconst hrefRegex = /<d:href>([^<]+)<\\/d:href>/gi;\nconst calDataRegex = /<cal:calendar-data[^>]*>([\\s\\S]*?)<\\/cal:calendar-data>/gi;\n\nlet hrefMatches = [...responseBody.matchAll(hrefRegex)];\nlet calDataMatches = [...responseBody.matchAll(calDataRegex)];\n\nfor (let i = 0; i < calDataMatches.length; i++) {\n  const icsData = calDataMatches[i][1];\n  const href = hrefMatches[i]?.[1] || '';  // Changed from i+1 to i\n  \n  // Extract SUMMARY\n  const summaryMatch = icsData.match(/SUMMARY:(.+?)(?:\\r?\\n|$)/);\n  const summary = summaryMatch ? summaryMatch[1].trim() : 'Untitled';\n  \n  // Extract DTSTART\n  const dtstartMatch = icsData.match(/DTSTART[^:]*:(\\d{4})(\\d{2})(\\d{2})T?(\\d{2})?(\\d{2})?/);\n  let startTime = '';\n  let displayTime = '';\n  if (dtstartMatch) {\n    if (dtstartMatch[4] && dtstartMatch[5]) {\n      startTime = `${dtstartMatch[4]}:${dtstartMatch[5]}`;\n      let hour = parseInt(dtstartMatch[4]);\n      const ampm = hour >= 12 ? 'PM' : 'AM';\n      hour = hour % 12 || 12;\n      displayTime = `${hour}:${dtstartMatch[5]} ${ampm}`;\n    } else {\n      displayTime = 'All day';\n    }\n  }\n  \n  // Extract UID\n  const uidMatch = icsData.match(/UID:(.+?)(?:\\r?\\n|$)/);\n  const uid = uidMatch ? uidMatch[1].trim() : '';\n  \n  events.push({\n    summary,\n    startTime,\n    displayTime,\n    href,\n    uid,\n    icsData\n  });\n}\n\n// Filter matches based on search criteria\nlet matches = events.filter(event => {\n  const termMatch = !searchTerm || \n    event.summary.toLowerCase().includes(searchTerm.toLowerCase());\n  \n  const timeMatch = !searchTime || \n    event.startTime === searchTime;\n  \n  if (searchTerm && searchTime) {\n    return termMatch && timeMatch;\n  }\n  \n  return termMatch || (searchTime && timeMatch);\n});\n\nif (!searchTerm && !searchTime) {\n  matches = events;\n}\n\nreturn {\n  json: {\n    ...$json,\n    matches: matches,\n    matchCount: matches.length,\n    allEventsOnDay: events.length\n  }\n};"
-      },
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        368,
-        256
-      ],
-      "id": "4c60cc54-fe4e-421f-8b3e-532af1d41a78",
+      "id": "5339ac0c-eab6-491e-9cea-40c954b02996",
       "name": "Find_Matching_Events"
     },
     {
@@ -345,10 +310,10 @@
       "type": "n8n-nodes-base.switch",
       "typeVersion": 3.4,
       "position": [
-        592,
-        224
+        -448,
+        640
       ],
-      "id": "781c6323-6a88-4c67-a398-efa2ff7c46ec",
+      "id": "ed8cb1ed-c14c-4361-bb4d-58f627d632cf",
       "name": "Handle_Delete_Logic"
     },
     {
@@ -358,16 +323,16 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1040,
-        160
+        0,
+        576
       ],
-      "id": "b7176620-8e9d-4847-a0cd-076000872e77",
+      "id": "34de6261-3d73-4922-91ff-47f23df0f5d0",
       "name": "No_Matches_Reply"
     },
     {
       "parameters": {
         "method": "DELETE",
-        "url": "=http://nextcloud-nextcloud-1{{ $json.matches[0].href }}",
+        "url": "=http://nextcloud{{ $json.matches[0].href }}",
         "authentication": "genericCredentialType",
         "genericAuthType": "httpBasicAuth",
         "options": {}
@@ -375,15 +340,15 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.3,
       "position": [
-        816,
-        352
+        -176,
+        704
       ],
-      "id": "16f95e21-926d-440e-8c75-6c824f6ac50d",
+      "id": "63b088b9-9498-4d63-9a08-c242694d270f",
       "name": "Execute_Delete",
       "credentials": {
         "httpBasicAuth": {
-          "id": "2PJySY1nSlqMkMxp",
-          "name": "nextcloud_local"
+          "id": "3J7PuDtrV5vizZsi",
+          "name": "Unnamed credential"
         }
       }
     },
@@ -394,10 +359,10 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1040,
-        352
+        0,
+        768
       ],
-      "id": "863db55f-241a-4560-b176-b87be415f4af",
+      "id": "2d9b2b08-1a99-45e3-a9d0-4078b3b3eb26",
       "name": "Delete_Success_Reply"
     },
     {
@@ -407,23 +372,23 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1040,
-        544
+        0,
+        960
       ],
-      "id": "4aeaa6e2-a69b-4fd9-92be-8681cd52086f",
+      "id": "aa1ebd37-99d9-4c79-ab12-ea053e9c899d",
       "name": "Multiple_Matches_Reply"
     },
     {
       "parameters": {
-        "jsCode": "const matches = $json.matches;\nconst password = $env.NEXTCLOUD_PASSWORD;\nconst results = [];\n\nfor (const event of matches) {\n  try {\n    await this.helpers.httpRequest({\n      method: 'DELETE',\n      url: `http://nextcloud-nextcloud-1${event.href}`,\n      headers: {\n        'Authorization': 'Basic ' + Buffer.from('cypherdoc:' + password).toString('base64')\n      }\n    });\n    results.push({ success: true, summary: event.summary });\n  } catch (error) {\n    results.push({ success: false, summary: event.summary, error: error.message });\n  }\n}\n\nconst successCount = results.filter(r => r.success).length;\nconst failCount = results.filter(r => !r.success).length;\n\nreturn {\n  json: {\n    ...$json,\n    results: results,\n    successCount: successCount,\n    failCount: failCount\n  }\n};"
+        "jsCode": "/**\n * Execute_Bulk_Delete - Calendar Event Deletion\n * \n * Workflow: Calendar_input/output\n * Node: Create_Execute_Bulk_Delete\n * \n * Purpose: Deletes one or more calendar events via CalDAV DELETE requests.\n *          Used for both single event deletion and bulk \"clear all\" operations.\n * \n * Environment Variables Required:\n *   - NEXTCLOUD_USERNAME: Nextcloud username\n *   - NEXTCLOUD_PASSWORD: Nextcloud app password\n * \n * Input: $json.matches (array of events with href property)\n * Output: results[], successCount, failCount\n * \n * Last updated: 2026-01-25\n */\n\nconst matches = $json.matches;\nconst username = $env.NEXTCLOUD_USERNAME;\nconst password = $env.NEXTCLOUD_PASSWORD;\n\nconst results = [];\n\nfor (const event of matches) {\n  try {\n    await this.helpers.httpRequest({\n      method: 'DELETE',\n      url: `http://nextcloud${event.href}`,\n      headers: {\n        'Authorization': 'Basic ' + Buffer.from(username + ':' + password).toString('base64')\n      }\n    });\n    results.push({ success: true, summary: event.summary });\n  } catch (error) {\n    results.push({ success: false, summary: event.summary, error: error.message });\n  }\n}\n\nconst successCount = results.filter(r => r.success).length;\nconst failCount = results.filter(r => !r.success).length;\n\nreturn {\n  json: {\n    ...$json,\n    results: results,\n    successCount: successCount,\n    failCount: failCount\n  }\n};"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        816,
-        -32
+        -224,
+        384
       ],
-      "id": "c89d6399-542a-4990-9aa4-5737f2610945",
+      "id": "81ec2f25-5cf5-423f-8697-d0debe71573a",
       "name": "Create Execute_Bulk_Delete"
     },
     {
@@ -433,10 +398,10 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1040,
-        -32
+        0,
+        384
       ],
-      "id": "cd3c9183-3176-4a32-8239-147ef4e97c7b",
+      "id": "19129f1b-8f55-43c2-90eb-781cd4e60c90",
       "name": "Create Bulk_Delete_Success_Reply"
     },
     {
@@ -446,11 +411,44 @@
       "type": "n8n-nodes-base.executeWorkflowTrigger",
       "typeVersion": 1.1,
       "position": [
-        -528,
-        -224
+        -1568,
+        192
       ],
-      "id": "64d40270-b12e-49a0-84a8-e936af30daa6",
+      "id": "b503485f-061d-4248-a7f4-f7d295fa7a66",
       "name": "When Executed by Another Workflow"
+    },
+    {
+      "parameters": {
+        "contactId": "={{ $json.contactId || $('Classify_Request').item.json.contactId }}",
+        "message": "={{ $json.reply || $json.message || \"✅ Event added: \" + $('Classify_Request').item.json.request }}"
+      },
+      "type": "n8n-nodes-simplexity.simplexity",
+      "typeVersion": 1,
+      "position": [
+        432,
+        464
+      ],
+      "id": "a8b2ec86-fe3e-4afe-8990-329c37696298",
+      "name": "Reply_SimpleX",
+      "credentials": {
+        "simplexityApi": {
+          "id": "wWS1DFmUG7TUV8Sk",
+          "name": "SimpleXity Config account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const calendarUrl = $env.NEXTCLOUD_URL;\nconst username = $env.NEXTCLOUD_USERNAME;\nconst password = $env.NEXTCLOUD_PASSWORD;\n\nconst startDate = $json.startDate.replace(/-/g, '');\nconst endDate = $json.endDate.replace(/-/g, '');\n\nconst body = `<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<C:calendar-query xmlns:D=\"DAV:\" xmlns:C=\"urn:ietf:params:xml:ns:caldav\">\n  <D:prop>\n    <D:getetag/>\n    <C:calendar-data/>\n  </D:prop>\n  <C:filter>\n    <C:comp-filter name=\"VCALENDAR\">\n      <C:comp-filter name=\"VEVENT\">\n        <C:time-range start=\"${startDate}T000000Z\" end=\"${endDate}T235959Z\"/>\n      </C:comp-filter>\n    </C:comp-filter>\n  </C:filter>\n</C:calendar-query>`;\n\nconst response = await this.helpers.httpRequest({\n  method: 'REPORT',\n  url: calendarUrl,\n  headers: {\n    'Content-Type': 'application/xml; charset=utf-8',\n    'Depth': '1',\n    'Authorization': 'Basic ' + Buffer.from(username + ':' + password).toString('base64')\n  },\n  body: body,\n  returnFullResponse: true\n});\n\nreturn {\n  json: {\n    data: response.body,\n    statusCode: response.statusCode,\n    contactId: $json.contactId,\n    startDate: $json.startDate,\n    endDate: $json.endDate\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -224,
+        192
+      ],
+      "id": "c12bec8c-ac5c-4f57-8393-f27c95121f60",
+      "name": "Query_Calendar"
     }
   ],
   "pinData": {},
@@ -464,22 +462,6 @@
             "index": 0
           }
         ]
-      ]
-    },
-    "Execute_Calendar_Agent": {
-      "main": [
-        [
-          {
-            "node": "Reply_SimpleX",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Reply_SimpleX": {
-      "main": [
-        []
       ]
     },
     "Classify_Request": {
@@ -504,7 +486,7 @@
         ],
         [
           {
-            "node": "Query_Calendar1",
+            "node": "Query_Calendar",
             "type": "main",
             "index": 0
           }
@@ -512,28 +494,6 @@
         [
           {
             "node": "Find_Matching_Events",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Format_Calendar_Response": {
-      "main": [
-        [
-          {
-            "node": "Reply_SimpleX",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Query_Calendar1": {
-      "main": [
-        [
-          {
-            "node": "Format_Calendar_Response",
             "type": "main",
             "index": 0
           }
@@ -583,7 +543,40 @@
         ]
       ]
     },
-    "No_Matches_Reply": {
+    "Execute_Delete": {
+      "main": [
+        [
+          {
+            "node": "Delete_Success_Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Execute_Bulk_Delete": {
+      "main": [
+        [
+          {
+            "node": "Create Bulk_Delete_Success_Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "When Executed by Another Workflow": {
+      "main": [
+        [
+          {
+            "node": "Prepare_Calendar_Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute_Calendar_Agent": {
       "main": [
         [
           {
@@ -594,11 +587,33 @@
         ]
       ]
     },
-    "Execute_Delete": {
+    "Format_Calendar_Response": {
       "main": [
         [
           {
-            "node": "Delete_Success_Reply",
+            "node": "Reply_SimpleX",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Bulk_Delete_Success_Reply": {
+      "main": [
+        [
+          {
+            "node": "Reply_SimpleX",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "No_Matches_Reply": {
+      "main": [
+        [
+          {
+            "node": "Reply_SimpleX",
             "type": "main",
             "index": 0
           }
@@ -627,33 +642,11 @@
         ]
       ]
     },
-    "Create Execute_Bulk_Delete": {
+    "Query_Calendar": {
       "main": [
         [
           {
-            "node": "Create Bulk_Delete_Success_Reply",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Create Bulk_Delete_Success_Reply": {
-      "main": [
-        [
-          {
-            "node": "Reply_SimpleX",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "When Executed by Another Workflow": {
-      "main": [
-        [
-          {
-            "node": "Prepare_Calendar_Input",
+            "node": "Format_Calendar_Response",
             "type": "main",
             "index": 0
           }
@@ -666,11 +659,11 @@
     "executionOrder": "v1",
     "availableInMCP": false
   },
-  "versionId": "6ae94851-a5ed-44f6-8ed0-fdfc02f8dd07",
+  "versionId": "e7e5a6e4-b637-412b-b662-0e92e37c0fc5",
   "meta": {
     "templateCredsSetupCompleted": true,
-    "instanceId": "6dd52e1127a8323eea11f39646bff42e584259ad6d872e077809aa55e4ff2415"
+    "instanceId": "a5af9c56908a68ed8b8b4eedf2ab29753e321c82b755d88674ae79dcfc198c21"
   },
-  "id": "jZiQe2f8DLzGk-YNtSVkA",
+  "id": "Zu7jopYH4OObgvwEzM6aG",
   "tags": []
 }

@@ -1,0 +1,187 @@
+{
+  "name": "calendar_agent",
+  "nodes": [
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "={{ 'http://nextcloud/remote.php/dav/calendars/cypherdoc/work/' + encodeURIComponent($json.uid) + '.ics' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBasicAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "text/calendar; charset=utf-8"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "text/calendar; charset=utf-8",
+        "body": "={{ $json.output }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        800,
+        0
+      ],
+      "id": "56286204-d08b-4707-ae67-70c1ac649704",
+      "name": "CalDAV_PUT",
+      "credentials": {
+        "httpBasicAuth": {
+          "id": "3J7PuDtrV5vizZsi",
+          "name": "Unnamed credential"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "inputSource": "passthrough"
+      },
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "3504807e-8776-4f26-940a-8357580e38e4",
+      "name": "When Executed by Another Workflow"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Split_ICS_Events - Code node (Run Once for All Items)\nconst items = $input.all();\nconst results = [];\n\n// Helper to format date nicely\nfunction formatDate(dateStr) {\n  const year = dateStr.substr(0, 4);\n  const month = parseInt(dateStr.substr(4, 2), 10);\n  const day = parseInt(dateStr.substr(6, 2), 10);\n  \n  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', \n                  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];\n  \n  const ordinal = (d) => {\n    if (d > 3 && d < 21) return d + 'th';\n    switch (d % 10) {\n      case 1: return d + 'st';\n      case 2: return d + 'nd';\n      case 3: return d + 'rd';\n      default: return d + 'th';\n    }\n  };\n  \n  return `${ordinal(day)} ${months[month - 1]}`;\n}\n\n// Helper to extract time from datetime string\nfunction extractTime(dt) {\n  if (dt && dt.includes('T')) {\n    const hour = dt.substr(9, 2);\n    const minute = dt.substr(11, 2);\n    return `${hour}:${minute}`;\n  }\n  return '';\n}\n\nfor (const item of items) {\n  // Get ICS content and normalize newlines\n  let icsContent = item.json.content || item.json.output || item.json.text || '';\n  \n  // CRITICAL FIX: Convert literal \\n to actual newlines\n  icsContent = icsContent.replace(/\\\\n/g, '\\n');\n  \n  // Also handle \\r\\n and normalize to \\n\n  icsContent = icsContent.replace(/\\r\\n/g, '\\n').replace(/\\r/g, '\\n');\n  \n  const contactId = item.json.contactId || $('When Executed by Another Workflow').item.json.contactId;\n  \n  const veventMatches = icsContent.match(/BEGIN:VEVENT[\\s\\S]*?END:VEVENT/g) || [];\n  \n  for (const vevent of veventMatches) {\n    // Extract UID\n    const uidMatch = vevent.match(/UID:(.+)/);\n    const uid = uidMatch ? uidMatch[1].trim() : `event-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;\n    \n    // Extract SUMMARY\n    const summaryMatch = vevent.match(/SUMMARY:(.+)/);\n    const summary = summaryMatch ? summaryMatch[1].trim() : 'Untitled Event';\n    \n    // Extract DTSTART\n    const dtstartMatch = vevent.match(/DTSTART[^:]*:(\\d{8}T?\\d{0,6})/);\n    let startTime = '';\n    let dateStr = '';\n    \n    if (dtstartMatch) {\n      const dt = dtstartMatch[1];\n      dateStr = formatDate(dt);\n      startTime = extractTime(dt);\n    }\n    \n    // Extract DTEND\n    const dtendMatch = vevent.match(/DTEND[^:]*:(\\d{8}T?\\d{0,6})/);\n    let endTime = '';\n    \n    if (dtendMatch) {\n      endTime = extractTime(dtendMatch[1]);\n    }\n    \n    // Rebuild complete ICS for this single event with proper newlines\n    const singleIcs = `BEGIN:VCALENDAR\nVERSION:2.0\nPRODID:-//n8n AI//SecondBrain//EN\nCALSCALE:GREGORIAN\n${vevent}\nEND:VCALENDAR`;\n    \n    results.push({\n      json: {\n        uid,\n        output: singleIcs,\n        summary,\n        startTime,\n        endTime,\n        date: dateStr,\n        contactId\n      }\n    });\n  }\n}\n\nif (results.length === 0) {\n  return items;\n}\n\nreturn results;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        576,
+        0
+      ],
+      "id": "18830f5d-6da3-4af3-ade1-925ceb972fdb",
+      "name": "Split_ICS_Events"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Aggregate_Results - Code node (Run Once for All Items)\nconst calDavResults = $input.all();\nconst splitEvents = $('Split_ICS_Events').all();\n\nif (calDavResults.length === 0) {\n  return [{ json: { message: '❌ No events were created', contactId: null } }];\n}\n\nconst contactId = splitEvents[0]?.json.contactId;\n\nconst allSuccessful = calDavResults.every(item => {\n  const statusCode = item.json.statusCode || 201;\n  return statusCode >= 200 && statusCode < 300;\n});\n\n// Build event descriptions with date and time range\nconst eventSummaries = splitEvents.map(item => {\n  const summary = item.json.summary || 'event';\n  const startTime = item.json.startTime;\n  const endTime = item.json.endTime;\n  const date = item.json.date;\n  \n  let timeRange = '';\n  if (startTime && endTime) {\n    timeRange = `${startTime} - ${endTime}`;\n  } else if (startTime) {\n    timeRange = startTime;\n  }\n  \n  let details = summary;\n  if (timeRange && date) {\n    details = `${summary} (${timeRange}) on ${date}`;\n  } else if (timeRange) {\n    details = `${summary} (${timeRange})`;\n  } else if (date) {\n    details = `${summary} on ${date}`;\n  }\n  return details;\n});\n\nlet message;\nif (allSuccessful) {\n  if (eventSummaries.length === 1) {\n    message = `✅ Event added: ${eventSummaries[0]}`;\n  } else {\n    message = `✅ Events added:\\n• ${eventSummaries.join('\\n• ')}`;\n  }\n} else {\n  message = `⚠️ Some events may not have been created. Please check your calendar.`;\n}\n\nreturn [{\n  json: {\n    contactId,\n    message,\n    eventCount: splitEvents.length,\n    success: allSuccessful\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1024,
+        0
+      ],
+      "id": "f65ed02e-5416-415e-a638-6e5245eb109d",
+      "name": "Aggregate_Results"
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "gemma3:12b",
+          "mode": "list",
+          "cachedResultName": "gemma3:12b"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "=JSON:\n{{ JSON.stringify($json)}}"
+            }
+          ]
+        },
+        "options": {
+          "system": "=You generate RFC 5545 iCalendar (ICS) text. Output ONLY raw ICS, no markdown, no explanations.\n\nTIMEZONE: Europe/London (use TZID parameter for DTSTART/DTEND)\nTODAY: {{ $now.format('YYYY-MM-DD') }}\nNOW: {{ $now.format('YYYYMMDD') }}T{{ $now.format('HHmmss') }}Z\n\nOUTPUT FORMAT:\nBEGIN:VCALENDAR\nVERSION:2.0\nPRODID:-//n8n AI//SecondBrain//EN\nCALSCALE:GREGORIAN\nBEGIN:VEVENT\nUID:<date>-<start>-<end>-<summary-slug>@secondbrain\nDTSTAMP:<now in UTC with Z>\nDTSTART;TZID=Europe/London:<YYYYMMDDTHHMMSS>\nDTEND;TZID=Europe/London:<YYYYMMDDTHHMMSS>\nSUMMARY:<event title>\nDESCRIPTION:Added via SimpleX\nEND:VEVENT\nEND:VCALENDAR\n\nTIME RULES:\n1. Explicit start AND end given (\"2pm-4pm\") → use exactly\n2. Only start time, no end (\"at 3pm\", \"landing at 7:20\") → zero duration (DTEND = DTSTART)\n3. No time at all (\"meeting on Friday\") → default 09:00-10:00 (1 hour)\n4. \"all day\" → use VALUE=DATE format, DTEND = next day\n\nROTA DEFAULTS (if type detected):\n- day → 08:00-20:30\n- night → 20:00-08:30 next day\n- oncall → 08:00-08:00 next day\n- am_list → 08:00-13:00\n- pm_list → 13:00-17:30\n\nUID FORMAT:\n<YYYYMMDD>-<HHMM>-<HHMM>-<summary-lowercase-hyphens>@secondbrain\nExample: 20260126-1400-1600-team-meeting@secondbrain\n\nESCAPING:\n- Newlines in DESCRIPTION → \\n\n- Commas → \\,\n- Semicolons → \\;\n\nEXAMPLES:\n\nInput: \"meeting at 3pm tomorrow\"\nOutput:\nBEGIN:VCALENDAR\nVERSION:2.0\nPRODID:-//n8n AI//SecondBrain//EN\nCALSCALE:GREGORIAN\nBEGIN:VEVENT\nUID:20260126-1500-1500-meeting@secondbrain\nDTSTAMP:20260125T110000Z\nDTSTART;TZID=Europe/London:20260126T150000\nDTEND;TZID=Europe/London:20260126T150000\nSUMMARY:Meeting\nDESCRIPTION:Added via SimpleX\nEND:VEVENT\nEND:VCALENDAR\n\nInput: \"lunch 12pm-1pm on Friday\"\nOutput:\nBEGIN:VCALENDAR\nVERSION:2.0\nPRODID:-//n8n AI//SecondBrain//EN\nCALSCALE:GREGORIAN\nBEGIN:VEVENT\nUID:20260131-1200-1300-lunch@secondbrain\nDTSTAMP:20260125T110000Z\nDTSTART;TZID=Europe/London:20260131T120000\nDTEND;TZID=Europe/London:20260131T130000\nSUMMARY:Lunch\nDESCRIPTION:Added via SimpleX\nEND:VEVENT\nEND:VCALENDAR\n\nInput: \"add dentist on the 15th and haircut on the 20th\"\nOutput:\nBEGIN:VCALENDAR\nVERSION:2.0\nPRODID:-//n8n AI//SecondBrain//EN\nCALSCALE:GREGORIAN\nBEGIN:VEVENT\nUID:20260215-0900-1000-dentist@secondbrain\nDTSTAMP:20260125T110000Z\nDTSTART;TZID=Europe/London:20260215T090000\nDTEND;TZID=Europe/London:20260215T100000\nSUMMARY:Dentist\nDESCRIPTION:Added via SimpleX\nEND:VEVENT\nBEGIN:VEVENT\nUID:20260220-0900-1000-haircut@secondbrain\nDTSTAMP:20260125T110000Z\nDTSTART;TZID=Europe/London:20260220T090000\nDTEND;TZID=Europe/London:20260220T100000\nSUMMARY:Haircut\nDESCRIPTION:Added via SimpleX\nEND:VEVENT\nEND:VCALENDAR\n\nCRITICAL RULES:\n- ALWAYS output at least one VEVENT if any event is requested\n- ALWAYS use TZID=Europe/London for DTSTART and DTEND\n- NEVER use Z suffix on DTSTART/DTEND\n- NEVER output markdown or explanations\n- Output starts with BEGIN:VCALENDAR, ends with END:VCALENDAR"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.ollama",
+      "typeVersion": 1,
+      "position": [
+        224,
+        0
+      ],
+      "id": "7742f979-a975-4404-9ae5-ed471a8835ff",
+      "name": "Message a model",
+      "credentials": {
+        "ollamaApi": {
+          "id": "I5p9YNA47JCP3MB1",
+          "name": "Ollama local"
+        }
+      }
+    }
+  ],
+  "pinData": {
+    "When Executed by Another Workflow": [
+      {
+        "json": {
+          "today": "2026-01-15",
+          "nowStamp": "20260115T062740",
+          "request": "add event titled “multiple” tomorrow at 5pm and the day after tomorrow at 7pm and on the 24th Jan at 11pm.",
+          "contactId": "6"
+        },
+        "pairedItem": {
+          "item": 0
+        }
+      }
+    ]
+  },
+  "connections": {
+    "When Executed by Another Workflow": {
+      "main": [
+        [
+          {
+            "node": "Message a model",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split_ICS_Events": {
+      "main": [
+        [
+          {
+            "node": "CalDAV_PUT",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "CalDAV_PUT": {
+      "main": [
+        [
+          {
+            "node": "Aggregate_Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Message a model": {
+      "main": [
+        [
+          {
+            "node": "Split_ICS_Events",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": false
+  },
+  "versionId": "7e610c6e-ff8b-4c67-9b81-7f69e690fe76",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "a5af9c56908a68ed8b8b4eedf2ab29753e321c82b755d88674ae79dcfc198c21"
+  },
+  "id": "NBGxXNizyKNbxJ7a0k6sD",
+  "tags": []
+}

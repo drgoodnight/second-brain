@@ -3,26 +3,26 @@
   "nodes": [
     {
       "parameters": {},
-      "id": "22db49d0-100a-4798-919b-1077cf8a30dd",
+      "id": "cd82ebe9-cdf9-4c85-9df2-b6d37998d78a",
       "name": "When Called By Another Workflow",
       "type": "n8n-nodes-base.executeWorkflowTrigger",
       "typeVersion": 1,
       "position": [
         0,
-        -112
+        0
       ]
     },
     {
       "parameters": {
         "jsCode": "// Parse AI response and prepare for Obsidian API\nconst input = $input.first().json;\nconst originalMessage = $('When Called By Another Workflow').first().json.message;\nconst source = $('When Called By Another Workflow').first().json.source || 'simplex';\nconst threadTs = $('When Called By Another Workflow').first().json.simplex_thread_ts || null;\n\nlet parsed;\ntry {\n  const content = input.output?.[0]?.content?.[0]?.text || input.message?.content || input.content || input;\n  let jsonStr = typeof content === 'string' ? content : JSON.stringify(content);\n  \n  // Extract JSON from markdown code blocks if present\n  const jsonMatch = jsonStr.match(/```json\\n?([\\s\\S]*?)\\n?```/) || jsonStr.match(/\\{[\\s\\S]*\\}/);\n  if (jsonMatch) {\n    jsonStr = jsonMatch[1] || jsonMatch[0];\n  }\n  \n  parsed = JSON.parse(jsonStr);\n} catch (e) {\n  // Fallback to needs_review\n  parsed = {\n    database: 'needs_review',\n    confidence: 0.3,\n    name: 'Unparseable Input',\n    notes: originalMessage\n  };\n}\n\n// Build the ClassifiedCapture object for the API\nreturn {\n  original_text: originalMessage,\n  database: parsed.database || 'needs_review',\n  confidence: parsed.confidence || 0.5,\n  name: parsed.name || 'Untitled',\n  \n  // People fields\n  context: parsed.context || null,\n  follow_ups: parsed.follow_ups || null,\n  \n  // Projects fields\n  status: parsed.status || null,\n  next_action: parsed.next_action || null,\n  \n  // Ideas fields\n  one_liner: parsed.one_liner || null,\n  \n  // Admin fields\n  due_date: parsed.due_date || null,\n  \n  // Common\n  notes: parsed.notes || null,\n  tags: parsed.tags || [],\n  \n  // Metadata\n  source: source,\n  simplex_thread_ts: threadTs\n};"
       },
-      "id": "b93c20d2-e98d-4290-8bbb-94590a83b579",
+      "id": "1e6a0baf-fb0d-43d5-9665-c8f55034ddf2",
       "name": "Parse_AI_Response",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        576,
-        -112
+        848,
+        0
       ]
     },
     {
@@ -34,65 +34,59 @@
         "jsonBody": "={{ JSON.stringify($json) }}",
         "options": {}
       },
-      "id": "59f3cec2-0504-4162-9979-6d12c210c21c",
+      "id": "26724c1a-60fa-4c41-b5b0-4af49bd17db4",
       "name": "Call_Obsidian_Capture_API",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        800,
-        -112
+        1104,
+        0
       ]
     },
     {
       "parameters": {
         "jsCode": "// Format response for SimpleX reply\nconst result = $input.first().json;\nconst classified = $('Parse_AI_Response').first().json;\nconst originalInput = $('When Called By Another Workflow').first().json;\n\nconst dbEmojis = {\n  'people': '👤',\n  'projects': '📊',\n  'ideas': '💡',\n  'admin': '✅',\n  'needs_review': '⚠️'\n};\nconst emoji = dbEmojis[classified.database] || '📝';\n\nlet reply = '';\n\nif (result.needs_review) {\n  reply = `⚠️ Couldn't confidently classify your input.\\n\\n`;\n  reply += `📥 Saved to **Inbox Log** for manual review.\\n`;\n  reply += `Confidence: ${(classified.confidence * 100).toFixed(0)}%`;\n} else {\n  reply = `${emoji} **${classified.database.charAt(0).toUpperCase() + classified.database.slice(1)}**\\n\\n`;\n  reply += `📝 ${result.record?.name || classified.name}\\n`;\n  \n  // Show what was actually added\n  const addedContent = originalInput.content || classified.notes;\n  if (addedContent) {\n    reply += `✏️ Added: \"${addedContent}\"\\n`;\n  }\n  \n  // Add database-specific details\n  if (classified.database === 'admin' && classified.due_date) {\n    reply += `📅 Due: ${classified.due_date}\\n`;\n  }\n  if (classified.database === 'projects' && classified.next_action) {\n    reply += `➡️ Next: ${classified.next_action}\\n`;\n  }\n  if (classified.database === 'ideas' && classified.one_liner) {\n    reply += `💭 ${classified.one_liner}\\n`;\n  }\n  if (classified.database === 'people' && classified.follow_ups) {\n    reply += `📌 Follow-up: ${classified.follow_ups}\\n`;\n  }\n  \n  if (classified.tags && classified.tags.length > 0) {\n    reply += `🏷️ ${classified.tags.join(', ')}\\n`;\n  }\n  \n  reply += `\\n✨ Confidence: ${(classified.confidence * 100).toFixed(0)}%`;\n}\n\nreturn { reply };"
       },
-      "id": "40178b5c-8cc2-4bc1-bb9f-beb3766fce2f",
+      "id": "12529db9-74d2-4144-8fd9-dfeaba3788ec",
       "name": "Format_Reply",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1024,
-        -112
+        1296,
+        0
       ]
     },
     {
       "parameters": {
         "modelId": {
           "__rl": true,
-          "value": "gpt-5.1-chat-latest",
+          "value": "gemma3:12b",
           "mode": "list",
-          "cachedResultName": "GPT-5.1-CHAT-LATEST"
+          "cachedResultName": "gemma3:12b"
         },
-        "responses": {
+        "messages": {
           "values": [
             {
-              "role": "system",
-              "content": "=You are an AI classifier for a personal knowledge management system with 5 databases.\n\n## INPUT FORMAT:\nYou will receive:\n- \"content\": The information to store\n- \"target\": (optional) Pre-extracted person or topic name\nIf a \"target\" field is provided:\n- For people database: use target as the \"name\" field directly\n- Store only the \"content\" as the notes - do NOT repeat the target name in notes\n\n## DATABASES:\n1. **people** - Information ABOUT specific people (colleagues, friends, family)\n   - Use when: mentioning a person's preferences, updates about them, things to follow up with them\n   - Example: \"John mentioned he likes hiking\", \"Remind me to ask Sarah about her vacation\"\n\n2. **projects** - Multi-step goals or initiatives with a clear outcome\n   - Use when: discussing ongoing work, milestones, project updates\n   - Example: \"Second brain project: need to add search\", \"Kitchen renovation is waiting on contractor\"\n\n3. **ideas** - Standalone insights, concepts, or creative thoughts\n   - Use when: capturing a new concept, brainstorm, or interesting thought\n   - Example: \"What if we used AI to sort email?\", \"App idea: habit tracker with social features\"\n\n4. **admin** - Administrative tasks, errands, one-off to-dos with deadlines\n   - Use when: tasks that need to get done (not project-related), appointments, bills, errands\n   - Example: \"Pay electricity bill by Friday\", \"Schedule dentist appointment\", \"Buy groceries\"\n\n5. **needs_review** - When confidence is low (<0.6) or input is ambiguous\n   - Use when: you're genuinely unsure which database fits\n\n## TAGGING RULES:\nGenerate 2-5 relevant tags based on the content. Tags should be:\n- Lowercase, single words or hyphenated (e.g., \"machine-learning\", \"finance\")\n- Topic-based: the subject matter (e.g., \"health\", \"tech\", \"travel\", \"work\")\n- Category-based: type of content (e.g., \"meeting\", \"research\", \"personal\", \"urgent\")\n- Context-based: related areas (e.g., \"family\", \"career\", \"hobby\", \"home\")\n\nCommon tag examples:\n- Topics: tech, health, finance, travel, food, fitness, books, music, movies, art\n- Work: meeting, client, deadline, presentation, review, planning\n- Life: family, friends, home, errands, appointments, shopping\n- Priority: urgent, important, someday, quick-win\n\n## OUTPUT FORMAT:\nReturn ONLY valid JSON with these fields:\n{\n  \"database\": \"people|projects|ideas|admin|needs_review\",\n  \"confidence\": 0.0-1.0,\n  \"name\": \"Short descriptive title\",\n  \n  \"context\": \"How I know them / their role (for people)\",\n  \"follow_ups\": \"Things to remember for next conversation (for people)\",\n  \n  \"status\": \"Active|Waiting|Blocked|Someday (for projects)\",\n  \"next_action\": \"The literal next thing to do (for projects)\",\n  \n  \"one_liner\": \"Core insight in one sentence (for ideas)\",\n  \n  \"due_date\": \"YYYY-MM-DD or null (for admin)\",\n  \n  \"notes\": \"Additional context or details\",\n  \"tags\": [\"topic1\", \"topic2\", \"context-tag\"]\n}\n\n## RULES:\n- Extract person names as the name field for people database\n- Parse dates like \"by Friday\", \"tomorrow\", \"next week\" into YYYY-MM-DD format (today is {{ $now.format('YYYY-MM-DD') }})\n- If the input mentions an EXISTING project/person, use their name exactly\n- Set confidence < 0.6 if genuinely ambiguous\n- ALWAYS include 2-5 relevant tags based on content topics and context"
-            },
-            {
               "content": "=Today's date: {{ $now.format('YYYY-MM-DD') }}\n\nClassify this input:\n\"{{ $json.message }}\""
-            },
-            {
-              "content": "={{ $json.target ? $json.target + ': ' : '' }}{{ $json.content }}"
             }
           ]
         },
-        "builtInTools": {},
-        "options": {}
+        "options": {
+          "system": "=You are a classifier for a knowledge management system. Analyze the input and return JSON.\n\nTODAY'S DATE: {{ $now.format('YYYY-MM-DD') }}\n\nINPUT:\n- \"content\": The information to store\n- \"target\": (optional) Pre-extracted person or topic name\n\nIf \"target\" is provided for people database: use it as \"name\", don't repeat it in notes.\n\nDATABASES:\n1. people - Information ABOUT specific people\n   - Preferences, updates, follow-ups about someone\n   - \"John mentioned he likes hiking\", \"Ask Sarah about her vacation\"\n\n2. projects - Multi-step goals with clear outcomes\n   - Ongoing work, milestones, initiatives\n   - \"Second brain: add search feature\", \"Kitchen renovation waiting on contractor\"\n\n3. ideas - Standalone insights or creative thoughts\n   - New concepts, brainstorms, interesting thoughts\n   - \"What if AI sorted email?\", \"App idea: habit tracker\"\n\n4. admin - Tasks, errands, to-dos with deadlines\n   - One-off tasks, appointments, bills\n   - \"Pay electricity by Friday\", \"Schedule dentist\", \"Buy groceries\"\n\n5. needs_review - Confidence below 0.6 or genuinely ambiguous\n\nTAGS (include 2-5):\n- Lowercase, single words or hyphenated\n- Topics: tech, health, finance, travel, food, fitness, work, family\n- Types: meeting, research, personal, urgent, deadline, planning\n- Context: home, career, hobby, friends, errands\n\nOUTPUT JSON:\n{\n  \"database\": \"people|projects|ideas|admin|needs_review\",\n  \"confidence\": 0.0-1.0,\n  \"name\": \"Short title\",\n  \"context\": \"How I know them (people only)\",\n  \"follow_ups\": \"Things to remember (people only)\",\n  \"status\": \"Active|Waiting|Blocked|Someday (projects only)\",\n  \"next_action\": \"Next step (projects only)\",\n  \"one_liner\": \"Core insight (ideas only)\",\n  \"due_date\": \"YYYY-MM-DD or null (admin only)\",\n  \"notes\": \"Additional details\",\n  \"tags\": [\"tag1\", \"tag2\"]\n}\n\nRULES:\n- Parse dates: \"by Friday\", \"tomorrow\", \"next week\" → YYYY-MM-DD\n- Use exact names for existing people/projects\n- Set confidence < 0.6 only if genuinely unsure\n- Include only fields relevant to the chosen database\n\nRespond with ONLY the JSON object."
+        }
       },
-      "type": "@n8n/n8n-nodes-langchain.openAi",
-      "typeVersion": 2.1,
+      "type": "@n8n/n8n-nodes-langchain.ollama",
+      "typeVersion": 1,
       "position": [
-        224,
-        -112
+        384,
+        0
       ],
-      "id": "22a75f4b-8d53-4da2-8184-4a9cb338266e",
+      "id": "85275eb7-8654-47bd-a77d-48cddca69c22",
       "name": "AI_Classify_to_5_Databases",
       "credentials": {
-        "openAiApi": {
-          "id": "tid0jWJO9PFqH8sU",
-          "name": "OpenAi account 2"
+        "ollamaApi": {
+          "id": "I5p9YNA47JCP3MB1",
+          "name": "Ollama local"
         }
       }
     }
@@ -125,14 +119,14 @@
       "main": [
         [
           {
-            "node": "AI_Classify_to_5_Databases1",
+            "node": "AI_Classify_to_5_Databases",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "AI_Classify_to_5_Databases1": {
+    "AI_Classify_to_5_Databases": {
       "main": [
         [
           {
@@ -149,11 +143,11 @@
     "executionOrder": "v1",
     "availableInMCP": false
   },
-  "versionId": "6ea71abc-1b43-4179-b4fc-59c0b700641e",
+  "versionId": "b8b1c61e-23d3-4ad8-9d04-4c60ed8b7eb8",
   "meta": {
     "templateCredsSetupCompleted": true,
-    "instanceId": "6dd52e1127a8323eea11f39646bff42e584259ad6d872e077809aa55e4ff2415"
+    "instanceId": "a5af9c56908a68ed8b8b4eedf2ab29753e321c82b755d88674ae79dcfc198c21"
   },
-  "id": "kT-EegwLrTyHZ76QwkcBI",
+  "id": "y6LUxSyFBZT3A8-glyin0",
   "tags": []
 }

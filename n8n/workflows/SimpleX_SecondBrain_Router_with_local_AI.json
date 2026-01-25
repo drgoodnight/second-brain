@@ -1,0 +1,1560 @@
+{
+  "name": "SimpleX_SecondBrain_Router_with_local_AI",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "simplex-in",
+        "options": {}
+      },
+      "id": "f923a8f9-6959-4323-ac7b-d7bc8f7f5b9a",
+      "name": "Webhook_SimpleX_In",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -1696,
+        864
+      ],
+      "webhookId": "d192177e-595e-4530-94c4-1aeed8454cc0"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "2f1ad08b-a84e-4740-a6b0-a9588ca7546d",
+              "name": "message",
+              "value": "={{ $json.body.text }}",
+              "type": "string"
+            },
+            {
+              "id": "c81b850b-c751-4712-99ca-fb4c76cff34c",
+              "name": "sender",
+              "value": "={{ $json.body.displayName }}",
+              "type": "string"
+            },
+            {
+              "id": "859ad339-870e-4844-a292-5ae81aef3d0a",
+              "name": "contactId",
+              "value": "={{ $json.body.contactId }}\n",
+              "type": "number"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "a8e4cb10-b768-474a-8285-f2c58aa901c0",
+      "name": "Prepare_Input",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -1472,
+        864
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract intent from AI response\nconst aiResponse = $input.first().json;\nlet intent = 'chat';\nlet target = null;\nlet content = null;\nlet query = null;\n\ntry {\n  let responseText = '';\n  \n  // Get the AI response text - handle multiple possible structures\n  if (aiResponse.output?.[0]?.content?.[0]?.text) {\n    responseText = aiResponse.output[0].content[0].text;\n  } else if (aiResponse.output?.content?.[0]?.text) {\n    responseText = aiResponse.output.content[0].text;\n  } else if (aiResponse.content) {\n    // Direct content field (common with Ollama)\n    responseText = aiResponse.content;\n  } else if (aiResponse.text) {\n    responseText = aiResponse.text;\n  }\n  \n  responseText = responseText.trim();\n  \n  // Strip markdown code fences if present\n  // Handles: ```json ... ``` or ``` ... ```\n  const codeBlockMatch = responseText.match(/```(?:json)?\\s*([\\s\\S]*?)\\s*```/);\n  if (codeBlockMatch) {\n    responseText = codeBlockMatch[1].trim();\n  }\n  \n  // Try to parse as JSON\n  if (responseText.startsWith('{')) {\n    const parsed = JSON.parse(responseText);\n    // Support both 'intent' (new) and 'category' (old) for backwards compatibility\n    intent = (parsed.intent || parsed.category || 'chat').toLowerCase();\n    target = parsed.target || null;\n    content = parsed.content || null;\n    query = parsed.query || null;\n  } else {\n    // Fallback: treat as plain category word\n    intent = responseText.toLowerCase();\n  }\n  \n} catch (e) {\n  // Log error for debugging\n  console.log('Parse error:', e.message);\n  intent = 'chat';\n}\n\n// Get original message from Prepare_Input\nconst prepareInput = $('Prepare_Input').first().json;\n\nreturn {\n  json: {\n    intent: intent,\n    target: target,\n    content: content,\n    query: query,\n    message: prepareInput.message,\n    sender: prepareInput.sender\n  }\n};"
+      },
+      "id": "71fd49f4-b546-46dc-820b-4b2b18407cb0",
+      "name": "Parse_Intent",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -448,
+        944
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.intent }}",
+                    "rightValue": "calendar",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "9fbae667-4f2e-4889-9047-355f618a0619"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "calendar"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.intent }}",
+                    "rightValue": "notes",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "96cc25d4-48ba-4725-9a5e-c1d238d711a1"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "notes"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.intent }}",
+                    "rightValue": "tasks",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "69ebf03c-36e7-49a0-be08-4fbd3d3cb70e"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "tasks"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.intent }}",
+                    "rightValue": "search",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "7de2e5aa-db7d-4d36-bb7b-de8a65b25781"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "search"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "id": "f4033951-f26a-4520-a667-fddf399fd91a",
+                    "leftValue": "={{ $json.intent }}",
+                    "rightValue": "chat",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "5 (fallback/extra)"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "id": "598d1f92-e341-4126-a21e-bac3b961caa6",
+                    "leftValue": "={{ $json.intent }}",
+                    "rightValue": "delete",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "delete"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "id": "d7c6105a-3e39-40eb-95e2-bea6d98f2255",
+                    "leftValue": "={{ $json.intent }}",
+                    "rightValue": "confirm",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "confirm"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "id": "4d215838-b856-4463-8778-b67ecedd462c",
+                    "leftValue": "={{ $json.intent }}",
+                    "rightValue": "cancel",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "cancel"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "id": "504007fe-8b3e-4b61-9bac-4d54c5c4398b",
+                    "leftValue": "={{ $json.intent }}",
+                    "rightValue": "fix",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "fix"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "id": "dd2473e6-c1a6-4428-84d8-a11d54dd8c23",
+                    "leftValue": "={{ $json.intent }}",
+                    "rightValue": "numeric_selection",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "numeric_selection"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "a8766b46-3a3c-419a-a880-f325de209ad9",
+      "name": "Route_Intent",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [
+        -224,
+        736
+      ],
+      "outputs": [
+        "Calendar",
+        "Notes",
+        "Tasks",
+        "Search",
+        "Help",
+        "Chat"
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract chat response\nconst response = $input.first().json;\nreturn {\n  reply: response.output?.[0]?.content?.[0]?.text || response.message?.content || response.content || response.text || \"I'm not sure how to help with that. Try again and good luck! :D\"\n};"
+      },
+      "id": "6ec1574f-1a58-405d-89d6-31d0942a012d",
+      "name": "Format_Chat_Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        352,
+        768
+      ]
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "Zu7jopYH4OObgvwEzM6aG",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/Zu7jopYH4OObgvwEzM6aG",
+          "cachedResultName": "Calendar_input/output"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.3,
+      "position": [
+        352,
+        0
+      ],
+      "id": "5d8e806b-43e7-42df-880e-2c27f4eb9af5",
+      "name": "Call 'Calendar_input/output'"
+    },
+    {
+      "parameters": {
+        "jsCode": "return {\n  body: $('Webhook_SimpleX_In').first().json.body\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        64,
+        0
+      ],
+      "id": "6d3dbbf6-6c04-4e54-be48-db12749ddd67",
+      "name": "Prepare_Calendar_Call"
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "y6LUxSyFBZT3A8-glyin0",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/y6LUxSyFBZT3A8-glyin0",
+          "cachedResultName": "Obsidian_5DB_Agent"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.3,
+      "position": [
+        352,
+        192
+      ],
+      "id": "43491344-693b-413f-b210-310e7ed65ab3",
+      "name": "Execute_Notes_Agent"
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "y6LUxSyFBZT3A8-glyin0",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/y6LUxSyFBZT3A8-glyin0",
+          "cachedResultName": "Obsidian_5DB_Agent"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.3,
+      "position": [
+        352,
+        384
+      ],
+      "id": "8dc0aba8-520a-4ac4-972c-3b8eb55b4083",
+      "name": "Execute_Tasks_Agent"
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "eS7HcTQUzKZLl9TGxdu2b",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/eS7HcTQUzKZLl9TGxdu2b",
+          "cachedResultName": "Obsidian_Search_Agent"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.3,
+      "position": [
+        352,
+        576
+      ],
+      "id": "d22d2773-16f5-424d-8c70-fee5af8f084a",
+      "name": "Call 'Obsidian_Search_Agent'"
+    },
+    {
+      "parameters": {
+        "jsCode": "const target = $json.target || '';\nconst contentText = $json.content || '';\n\n// Only combine if both exist, otherwise use whichever is available\nlet message;\nif (target && contentText) {\n  message = `${target}: ${contentText}`;\n} else {\n  message = target || contentText || $json.message || '';\n}\n\nreturn {\n  message: message,\n  content: contentText,\n  target: target,\n  original_text: message,\n  sender: $json.sender\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        64,
+        192
+      ],
+      "id": "ca352b77-5d6f-475f-b362-98946260ff9b",
+      "name": "Prepare_Notes_Call"
+    },
+    {
+      "parameters": {
+        "jsCode": "return {\n  message: $('Prepare_Input').first().json.message,\n  sender: $('Prepare_Input').first().json.sender\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        64,
+        384
+      ],
+      "id": "b4def9b1-2328-4632-b005-4a87927b4806",
+      "name": "Prepare_Tasks_Call"
+    },
+    {
+      "parameters": {
+        "jsCode": "return {\n  message: $('Prepare_Input').first().json.message,\n  sender: $('Prepare_Input').first().json.sender\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        64,
+        576
+      ],
+      "id": "0e6f20bf-66a2-4173-b5bb-761b16b152a6",
+      "name": "Prepare_Search_Call"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Use message, not query - the AI strips too much\nlet query = $json.message;\n\n// Remove delete-specific command words\nquery = query.replace(/^(delete|remove)\\s+/i, '');\nquery = query.replace(/\\s*(entry|note|capture)\\s*/i, ' ');\nquery = query.replace(/\\s*(about|from)\\s*/i, ' ');\n\n// Remove database specifiers like \"in ideas\", \"from people\", \"in projects\"\nquery = query.replace(/\\s+(in|from)\\s+(ideas|people|projects|admin|vault|obsidian)\\s*$/i, '');\n\n// Clean up extra spaces\nquery = query.replace(/\\s+/g, ' ').trim();\n\nreturn {\n  query: query,\n  sender: $json.sender\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        64,
+        960
+      ],
+      "id": "e32cbe3c-fa07-4678-a1d3-731c8e916d56",
+      "name": "Prepare_Delete_Call"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://obsidian-api:8000/search",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "query",
+              "value": "={{ $json.query }}"
+            },
+            {
+              "name": "limit",
+              "value": "11"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        352,
+        960
+      ],
+      "id": "c0a3820e-89de-495a-aacb-affd038e8b4a",
+      "name": "Search_For_Delete"
+    },
+    {
+      "parameters": {
+        "jsCode": "const results = $input.all();\nconst sender = $('Prepare_Delete_Call').first().json.sender;\nconst query = $('Prepare_Delete_Call').first().json.query;\n\nif (!results || results.length === 0 || !results[0].json.results) {\n  return {\n    json: {\n      reply: `❌ No matches found for \"${query}\".`,\n      has_match: false,\n      multiple: false,\n      matches: [],\n      sender: sender\n    }\n  };\n}\n\nconst searchResults = results[0].json.results;\n\nif (searchResults.length === 0) {\n  return {\n    json: {\n      reply: `❌ No matches found for \"${query}\".`,\n      has_match: false,\n      multiple: false,\n      matches: [],\n      sender: sender\n    }\n  };\n}\n\n// Single match - can proceed directly\nif (searchResults.length === 1) {\n  const match = searchResults[0];\n  return {\n    json: {\n      reply: `🗑️ Found: \"${match.name}\" in ${match.database}\\n\\nReply 'yes' to delete, or 'cancel'.`,\n      has_match: true,\n      multiple: false,\n      matches: [{\n        id: match.id,\n        database: match.database,\n        name: match.name\n      }],\n      pending_id: match.id,\n      pending_database: match.database,\n      pending_name: match.name,\n      sender: sender\n    }\n  };\n}\n\n// Multiple matches - need selection\nconst matches = searchResults.map((match, index) => {\n  // Get emoji for database type\n  const dbEmoji = {\n    'people': '👤',\n    'projects': '📁',\n    'ideas': '💡',\n    'admin': '📋',\n    'inbox_log': '📥'\n  }[match.database] || '📄';\n  \n  // Format timestamp if available\n  let timestamp = '';\n  if (match.context && match.context.includes('20')) {\n    const dateMatch = match.context.match(/(\\d{2}\\/\\d{2}\\s+\\d{2}:\\d{2})/);\n    if (dateMatch) timestamp = ` (${dateMatch[1]})`;\n  }\n  \n  return {\n    id: match.id,\n    database: match.database,\n    name: match.name,\n    displayName: `${dbEmoji} \"${match.name}\" in ${match.database}${timestamp}`\n  };\n});\n\n// Build reply message\nlet reply = `🔍 Found ${matches.length} matches:\\n\\n`;\nmatches.forEach((match, index) => {\n  reply += `${index + 1}. ${match.displayName}\\n`;\n});\nreply += `\\nReply with number (1-${matches.length}) to delete, or 'cancel'.`;\n\nreturn {\n  json: {\n    reply: reply,\n    has_match: true,\n    multiple: true,\n    matches: matches.map(m => ({\n      id: m.id,\n      database: m.database,\n      name: m.name\n    })),\n    sender: sender\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        576,
+        960
+      ],
+      "id": "670f3064-5eaf-49c8-a09c-29118e4cd328",
+      "name": "Format_Delete_Confirmation"
+    },
+    {
+      "parameters": {
+        "jsCode": "return {\n  sender: $json.sender,\n  message: $json.message\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        64,
+        1536
+      ],
+      "id": "df61f884-8a8a-4594-a9e6-9af0338c7adc",
+      "name": "Handle_Confirm"
+    },
+    {
+      "parameters": {
+        "method": "DELETE",
+        "url": "=http://obsidian-api:8000/db/{{ $json.database }}/{{ $json.id }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        1024,
+        1536
+      ],
+      "id": "fade1bd5-8eac-40af-b067-208185ac7503",
+      "name": "Execute_Delete"
+    },
+    {
+      "parameters": {
+        "jsCode": "const result = $input.first().json;\n\nif (result.success) {\n  return {\n    reply: `✅ Deleted: \"${result.deleted_name}\"`\n  };\n} else {\n  return {\n    reply: `❌ Failed to delete. Please try again.`\n  };\n}"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1248,
+        1536
+      ],
+      "id": "fd7231a2-513a-4cbc-892d-775919be68e8",
+      "name": "Format_Delete_Result"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "128ad706-0e0e-4f28-9716-adf05edc3cd8",
+              "leftValue": "={{ $json.action }}",
+              "rightValue": "=delete",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "or"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        800,
+        1536
+      ],
+      "id": "d38e9d59-978c-47e0-bd02-0cf89945f27c",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "jsCode": "return {\n  sender: $json.sender\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        64,
+        1728
+      ],
+      "id": "051f2023-2901-43d6-87db-52a2967d2612",
+      "name": "Handle_Cancel"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://obsidian-api:8000/pending_delete/multi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"matches\": {{ JSON.stringify($('Format_Delete_Confirmation').first().json.matches) }},\n  \"sender\": \"{{ $json.sender }}\",\n  \"query\": \"{{ $('Prepare_Delete_Call').first().json.query }}\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        1024,
+        960
+      ],
+      "id": "d5faa76d-5e5e-4cf2-a4a7-07179a22be7d",
+      "name": "Store_Pending_Delete"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "5201c4ee-ec11-48a4-9417-b5e932718cf0",
+              "leftValue": "={{ $json.has_match }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        800,
+        960
+      ],
+      "id": "5cea0426-a7e2-4ead-a21d-31dee078f2af",
+      "name": "If1"
+    },
+    {
+      "parameters": {
+        "url": "http://obsidian-api:8000/pending_delete",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        352,
+        1536
+      ],
+      "id": "763b1519-b99c-4d97-b1f4-7747dd90bd0b",
+      "name": "Get_Pending_Delete",
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = $input.first().json;\nconst sender = $('Handle_Confirm').first().json.sender;\n\n// Check if we got an error (404 or 410)\nif (response.detail) {\n  if (response.detail === \"Pending delete expired\") {\n    return {\n      action: 'expired',\n      reply: `⏰ Delete request expired. Please try again.`\n    };\n  }\n  return {\n    action: 'none', \n    reply: `❓ Nothing to confirm. Use 'delete [entry]' first.`\n  };\n}\n\nreturn {\n  action: 'delete',\n  id: response.id,\n  database: response.database,\n  name: response.name,\n  sender: sender\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        576,
+        1536
+      ],
+      "id": "220868ba-3df5-434d-b484-24a4a9690efb",
+      "name": "Check_Pending_Result"
+    },
+    {
+      "parameters": {
+        "method": "DELETE",
+        "url": "http://obsidian-api:8000/pending_delete",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        1472,
+        1536
+      ],
+      "id": "882d93cd-ed56-462a-96ed-3f99020a1023",
+      "name": "Clear_Pending_Delete"
+    },
+    {
+      "parameters": {
+        "method": "DELETE",
+        "url": "http://obsidian-api:8000/pending_delete",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        352,
+        1728
+      ],
+      "id": "63add48c-1d02-46a5-89d4-2eabe7bceab2",
+      "name": "Clear_Pending_For_Cancel"
+    },
+    {
+      "parameters": {
+        "jsCode": "return {\n  reply: `🚫 Cancelled. Nothing was deleted.`\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        576,
+        1728
+      ],
+      "id": "7cc54577-d835-4e1f-a12c-7c32efbb78d2",
+      "name": "Format_Cancel_Reply"
+    },
+    {
+      "parameters": {
+        "jsCode": "const confirmation = $('Format_Delete_Confirmation').first().json;\nreturn {\n  reply: confirmation.reply\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1248,
+        960
+      ],
+      "id": "079c4060-ead3-4553-a7b2-01d3826357b5",
+      "name": "Pass_Delete_Reply"
+    },
+    {
+      "parameters": {
+        "jsCode": "const deleteResult = $('Format_Delete_Result').first().json;\nreturn {\n  reply: deleteResult.reply\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1696,
+        1536
+      ],
+      "id": "0f13802a-d935-4e00-8702-4d8fc2994d3b",
+      "name": "Pass_Confirm_Reply"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Pre-Route Calendar Detection\n// Place between Prepare_Input and Classify_Intent AI\n// Detects clear calendar patterns and routes directly, skipping AI for efficiency\n\nconst message = ($json.message || $json.query || '').toLowerCase();\n\n// Date/time indicators that suggest calendar context\nconst datePatterns = [\n  /\\b(today|tonight|tomorrow|yesterday)\\b/,\n  /\\b(mon|monday|tue|tues|tuesday|wed|wednesday|thu|thur|thurs|thursday|fri|friday|sat|saturday|sun|sunday)\\b/i,\n  /\\b(next|this|last)\\s+(week|month|mon|monday|tue|tues|tuesday|wed|wednesday|thu|thur|thurs|thursday|fri|friday|sat|saturday|sun|sunday)\\b/i,\n  /\\b\\d{1,2}(st|nd|rd|th)?\\s*(of\\s+)?(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)/i,\n  /\\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\\s+\\d{1,2}(st|nd|rd|th)?\\b/i,\n  /\\b(the\\s+)?\\d{1,2}(st|nd|rd|th)\\b/,  // \"the 22nd\", \"on the 5th\"\n  /\\b\\d{1,2}(:\\d{2})?\\s*(am|pm)\\b/,      // \"3pm\", \"15:00\"\n  /\\bin\\s+\\d+\\s+days?\\b/,                 // \"in 3 days\"\n  /\\b\\d+\\s+days?\\s+(ago|from now)\\b/,     // \"2 days ago\"\n  /\\bday\\s+(after|before)\\s+(tomorrow|yesterday)\\b/,\n  /\\b(for\\s+)?(the\\s+)?week\\b/           // \"the week\", \"this week\"\n];\n\n// Calendar action words\nconst calendarQueryWords = ['what\\'s on', 'whats on', 'schedule', 'calendar', 'busy', 'free', 'do i have', 'am i', 'show my', 'list my', 'check my'];\nconst calendarAddWords = ['add', 'create', 'schedule', 'book', 'set up', 'put in', 'new event', 'new meeting', 'new appointment'];\nconst calendarDeleteWords = ['cancel', 'delete', 'remove', 'drop', 'clear', 'wipe'];\n\n// Check for date/time indicators\nconst hasDateIndicator = datePatterns.some(pattern => pattern.test(message));\n\n// Check for calendar-specific words\nconst hasQueryWord = calendarQueryWords.some(word => message.includes(word));\nconst hasAddWord = calendarAddWords.some(word => message.includes(word));\nconst hasDeleteWord = calendarDeleteWords.some(word => message.includes(word));\n\n// Determine if this is clearly a calendar request\nlet isCalendar = false;\nlet calendarAction = null;\n\n// Query: calendar query words OR \"what\" + date indicator\nif (hasQueryWord || (message.includes('what') && hasDateIndicator)) {\n  isCalendar = true;\n  calendarAction = 'query';\n}\n\n// Add: date/time indicator + add words, OR time pattern (likely scheduling)\nif (hasAddWord && hasDateIndicator) {\n  isCalendar = true;\n  calendarAction = 'add';\n}\n\n// Delete: delete words + date indicator (this is the key fix!)\nif (hasDeleteWord && hasDateIndicator) {\n  isCalendar = true;\n  calendarAction = 'delete';\n}\n\n// Also catch time-based adds without explicit \"add\" word\n// e.g., \"meeting at 3pm tomorrow\", \"lunch with Bob at noon\"\nconst hasTimePattern = /\\b\\d{1,2}(:\\d{2})?\\s*(am|pm)\\b/.test(message) || /\\bat\\s+(noon|midnight)\\b/.test(message);\nconst hasEventWord = /\\b(meeting|appointment|call|lunch|dinner|breakfast|event|reminder|shift)\\b/.test(message);\nif (hasTimePattern && hasEventWord && hasDateIndicator && !hasDeleteWord && !hasQueryWord) {\n  isCalendar = true;\n  calendarAction = 'add';\n}\n\n// Return result\nif (isCalendar) {\n  return {\n    json: {\n      ...$json,\n      intent: 'calendar',\n      calendarAction: calendarAction,\n      skipAI: true,\n      routedBy: 'pre-route-calendar'\n    }\n  };\n}\n\n// Not a clear calendar pattern - let AI classify\nreturn {\n  json: {\n    ...$json,\n    skipAI: false\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1248,
+        864
+      ],
+      "id": "d004bcae-f310-4663-a8c5-40728132f39b",
+      "name": "Pre route calendar"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "bc1c65e4-ce44-4c81-9601-7a5555adc344",
+              "leftValue": "={{ $json.skipAI }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -1024,
+        864
+      ],
+      "id": "e08d3889-807f-4ecf-808a-d304cbfbfc65",
+      "name": "skip_AI"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=http://obsidian-api:8000/fix?category={{ $json.category }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        352,
+        1344
+      ],
+      "id": "a26fab7d-388d-4813-9115-240360fb0723",
+      "name": "Apply_Fix"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract category from the fix command\nconst message = $json.message || '';\nlet category = $json.category;\n\n// If category not set, parse from message\nif (!category) {\n  const match = message.toLowerCase().match(/fix[:\\s]+(\\w+)/);\n  if (match) {\n    const raw = match[1];\n    // Normalize category names\n    const categoryMap = {\n      'people': 'people', 'person': 'people',\n      'project': 'projects', 'projects': 'projects',\n      'idea': 'ideas', 'ideas': 'ideas',\n      'admin': 'admin', 'task': 'admin', 'tasks': 'admin'\n    };\n    category = categoryMap[raw] || raw;\n  }\n}\n\n// Extract optional name override\nlet name = $json.name;\nif (!name) {\n  const nameMatch = message.match(/call it\\s+(.+)/i);\n  if (nameMatch) {\n    name = nameMatch[1].trim();\n  }\n}\n\nreturn {\n  json: {\n    ...$json,\n    category: category,\n    name: name || null\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        64,
+        1344
+      ],
+      "id": "6d88ea25-c247-48a1-a202-ccf67174d892",
+      "name": "Parse_Fix_Category"
+    },
+    {
+      "parameters": {
+        "jsCode": "const message = $json.message || $json.query || '';\nconst number = parseInt(message.trim(), 10);\n\nreturn {\n  json: {\n    selection: number,\n    sender: $json.sender\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        64,
+        1152
+      ],
+      "id": "245d7b6d-5499-4324-898b-8df6c241c01b",
+      "name": "Parse_Selection"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=http://obsidian-api:8000/pending_delete/select/{{ $json.selection }}",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        352,
+        1152
+      ],
+      "id": "2db2682d-5a06-42d2-9e9a-ce7a78a9b0b6",
+      "name": "Execute_Selection",
+      "alwaysOutputData": true,
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first().json;\n\n// Data is nested under 'body' when using Response option\nconst data = input.body || input;\n\n// Success case\nif (data.success) {\n  return { json: { reply: data.message } };\n}\n\n// Error case - extract from error response\nconst detail = data.detail || input.errorDescription || 'Selection failed';\n\nif (detail.includes('Invalid selection')) {\n  return { json: { reply: `❌ ${detail}` } };\n}\n\nif (detail.includes('expired')) {\n  return { json: { reply: '⏰ Selection expired. Please start again.' } };\n}\n\nif (detail.includes('No pending')) {\n  return { json: { reply: '❌ No pending selection. Start a new delete request.' } };\n}\n\nreturn { json: { reply: `❌ ${detail}` } };"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        576,
+        1152
+      ],
+      "id": "17143a6a-f0a2-414f-81e4-7fcd1eb44f40",
+      "name": "Format_Selection_Result"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Pass_Selection_Reply (Code node)\nconst result = $('Format_Selection_Result').first().json;\n\nreturn {\n  json: {\n    reply: result.reply,\n    contactId: $('Parse_Selection').first().json.sender\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        800,
+        1152
+      ],
+      "id": "4104f1e6-3221-4175-8780-ceb5ee33dc90",
+      "name": "Pass_Selection_Reply"
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "gemma3:12b",
+          "mode": "list",
+          "cachedResultName": "gemma3:12b"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "={{ $json.message }}"
+            }
+          ]
+        },
+        "options": {
+          "system": "=You are a router for a personal assistant. Analyze the user's message and return JSON.\n\nCategories:\n- \"calendar\": ALL calendar operations - adding, querying, AND deleting/canceling events. Includes schedules, appointments, meetings, times, dates.\n- \"notes\": CAPTURING new information about people, ideas, projects to Obsidian\n- \"search\": RETRIEVING/querying existing stored information from Obsidian (includes listing database contents)\n- \"tasks\": Todo items, reminders with deadlines\n- \"delete\": User wants to remove/delete an Obsidian entry (NOT calendar events)\n- \"confirm\": User confirming a previous action (yes, confirm, do it, go ahead)\n- \"cancel\": User cancelling a previous action (no, nevermind, stop) - NOT canceling calendar events\n- \"fix\": User is fixing a previous classification (fix: people, fix: project, etc.)\n- \"numeric_selection\": User selecting from a numbered list (1, 2, 3) after being shown options\n- \"chat\": General conversation\n\nIMPORTANT: If the message mentions dates, times, or event-related words (meeting, appointment, shift, etc.) AND a delete/cancel/remove word, it's a CALENDAR operation, not \"delete\" or \"cancel\".\n\nFor \"calendar\" category, extract:\n- content: The full message for the calendar system to process\n\nFor \"notes\" category, extract:\n- target: The person/topic the note is about (if mentioned)\n- content: ONLY the factual information, stripped of command words (\"add to\", \"note that\", \"remember\") and filler pronouns (\"she has\", \"he is\", \"they are\")\n\nFor \"search\" category, extract:\n- query: What to search for (or database name if listing)\n\nFor \"delete\" category (Obsidian only), extract:\n- query: What to search for to find the entry to delete\n\nFor \"fix\" category, extract:\n- category: The target category (people, projects, ideas, admin)\n- name: Optional override name for the record\n\nFor \"numeric_selection\" category, extract:\n- selection: The number the user chose\n\nExamples:\nInput: \"add to Nikki she has good eye for photography\"\nOutput: {\"intent\": \"notes\", \"target\": \"Nikki\", \"content\": \"good eye for photography\"}\n\nInput: \"John mentioned he likes coffee\"\nOutput: {\"intent\": \"notes\", \"target\": \"John\", \"content\": \"likes coffee\"}\n\nInput: \"what do I know about John?\"\nOutput: {\"intent\": \"search\", \"query\": \"John\"}\n\nInput: \"list people\"\nOutput: {\"intent\": \"search\", \"query\": \"list people\"}\n\nInput: \"show me all projects\"\nOutput: {\"intent\": \"search\", \"query\": \"list projects\"}\n\nInput: \"what's in my vault\"\nOutput: {\"intent\": \"search\", \"query\": \"list all\"}\n\nInput: \"show tasks\"\nOutput: {\"intent\": \"search\", \"query\": \"list admin\"}\n\nInput: \"meeting at 3pm tomorrow\"\nOutput: {\"intent\": \"calendar\", \"content\": \"meeting at 3pm tomorrow\"}\n\nInput: \"what's on for the week?\"\nOutput: {\"intent\": \"calendar\", \"content\": \"what's on for the week?\"}\n\nInput: \"cancel my 3pm meeting tomorrow\"\nOutput: {\"intent\": \"calendar\", \"content\": \"cancel my 3pm meeting tomorrow\"}\n\nInput: \"delete the event on Saturday\"\nOutput: {\"intent\": \"calendar\", \"content\": \"delete the event on Saturday\"}\n\nInput: \"remove the lunch appointment\"\nOutput: {\"intent\": \"calendar\", \"content\": \"remove the lunch appointment\"}\n\nInput: \"delete the entry about Nikki likes grapes\"\nOutput: {\"intent\": \"delete\", \"query\": \"Nikki likes grapes\"}\n\nInput: \"remove the note about coffee\"\nOutput: {\"intent\": \"delete\", \"query\": \"coffee\"}\n\nInput: \"yes\"\nOutput: {\"intent\": \"confirm\"}\n\nInput: \"do it\"\nOutput: {\"intent\": \"confirm\"}\n\nInput: \"no\"\nOutput: {\"intent\": \"cancel\"}\n\nInput: \"nevermind\"\nOutput: {\"intent\": \"cancel\"}\n\nInput: \"fix: people\"\nOutput: {\"intent\": \"fix\", \"category\": \"people\"}\n\nInput: \"fix: project\"\nOutput: {\"intent\": \"fix\", \"category\": \"projects\"}\n\nInput: \"fix: projects\"\nOutput: {\"intent\": \"fix\", \"category\": \"projects\"}\n\nInput: \"fix: idea\"\nOutput: {\"intent\": \"fix\", \"category\": \"ideas\"}\n\nInput: \"fix: ideas\"\nOutput: {\"intent\": \"fix\", \"category\": \"ideas\"}\n\nInput: \"fix: admin\"\nOutput: {\"intent\": \"fix\", \"category\": \"admin\"}\n\nInput: \"fix: task\"\nOutput: {\"intent\": \"fix\", \"category\": \"admin\"}\n\nInput: \"fix people call it Bob Smith\"\nOutput: {\"intent\": \"fix\", \"category\": \"people\", \"name\": \"Bob Smith\"}\n\nInput: \"1\"\nOutput: {\"intent\": \"numeric_selection\", \"selection\": 1}\n\nInput: \"2\"\nOutput: {\"intent\": \"numeric_selection\", \"selection\": 2}\n\nInput: \"3\"\nOutput: {\"intent\": \"numeric_selection\", \"selection\": 3}\n\nRespond with ONLY valid JSON."
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.ollama",
+      "typeVersion": 1,
+      "position": [
+        -800,
+        944
+      ],
+      "id": "a9b0752b-ad86-47cb-9414-a6445d9342ce",
+      "name": "Message a model",
+      "credentials": {
+        "ollamaApi": {
+          "id": "I5p9YNA47JCP3MB1",
+          "name": "Ollama local"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "gemma3:12b",
+          "mode": "list",
+          "cachedResultName": "gemma3:12b"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "={{ $('Prepare_Input').item.json.message }}"
+            }
+          ]
+        },
+        "options": {
+          "system": "=You are a friendly, knowledgeable personal assistant. \n\nYou can help with:\n- General questions (facts, explanations, recommendations)\n- Casual conversation\n- Research, brainstorming, writing, advice\n- Recommendations (restaurants, movies, products, etc.)\n\nThe user also has a \"second brain\" system with these features:\n- Calendar: \"add meeting at 3pm tomorrow\", \"what's on my calendar today?\"\n- Notes: \"add to John he likes hiking\", \"idea: AI email sorter\"\n- Tasks: \"remind me to pay rent by Friday\", \"todo: call mom\"\n- Search: \"what do I know about John?\", \"list people\"\n- Delete: \"delete the note about coffee\"\n\nIf their question would be better handled by one of these features, briefly suggest how to phrase it.\n\nOtherwise, answer directly and concisely. Be conversational and warm."
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.ollama",
+      "typeVersion": 1,
+      "position": [
+        0,
+        768
+      ],
+      "id": "72b2763d-cc1d-49e0-8ea3-7b91ddfa167a",
+      "name": "Message a model1",
+      "credentials": {
+        "ollamaApi": {
+          "id": "I5p9YNA47JCP3MB1",
+          "name": "Ollama local"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "contactId": "={{ $('Webhook_SimpleX_In').first().json.body.contactId }}",
+        "message": "={{ $json.reply || $json.message }}"
+      },
+      "type": "n8n-nodes-simplexity.simplexity",
+      "typeVersion": 1,
+      "position": [
+        2480,
+        912
+      ],
+      "id": "16721a7f-db01-4731-9802-9bf65de01e85",
+      "name": "Simplexity",
+      "credentials": {
+        "simplexityApi": {
+          "id": "wWS1DFmUG7TUV8Sk",
+          "name": "SimpleXity Config account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook_SimpleX_In": {
+      "main": [
+        [
+          {
+            "node": "Prepare_Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse_Intent": {
+      "main": [
+        [
+          {
+            "node": "Route_Intent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route_Intent": {
+      "main": [
+        [
+          {
+            "node": "Prepare_Calendar_Call",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare_Notes_Call",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare_Tasks_Call",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare_Search_Call",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Message a model1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare_Delete_Call",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Handle_Confirm",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Handle_Cancel",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Parse_Fix_Category",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Parse_Selection",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare_Input": {
+      "main": [
+        [
+          {
+            "node": "Pre route calendar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare_Calendar_Call": {
+      "main": [
+        [
+          {
+            "node": "Call 'Calendar_input/output'",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare_Notes_Call": {
+      "main": [
+        [
+          {
+            "node": "Execute_Notes_Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare_Tasks_Call": {
+      "main": [
+        [
+          {
+            "node": "Execute_Tasks_Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare_Search_Call": {
+      "main": [
+        [
+          {
+            "node": "Call 'Obsidian_Search_Agent'",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare_Delete_Call": {
+      "main": [
+        [
+          {
+            "node": "Search_For_Delete",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search_For_Delete": {
+      "main": [
+        [
+          {
+            "node": "Format_Delete_Confirmation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format_Delete_Confirmation": {
+      "main": [
+        [
+          {
+            "node": "If1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Handle_Confirm": {
+      "main": [
+        [
+          {
+            "node": "Get_Pending_Delete",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute_Delete": {
+      "main": [
+        [
+          {
+            "node": "Format_Delete_Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "Execute_Delete",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format_Delete_Result": {
+      "main": [
+        [
+          {
+            "node": "Clear_Pending_Delete",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Handle_Cancel": {
+      "main": [
+        [
+          {
+            "node": "Clear_Pending_For_Cancel",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Store_Pending_Delete": {
+      "main": [
+        [
+          {
+            "node": "Pass_Delete_Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If1": {
+      "main": [
+        [
+          {
+            "node": "Store_Pending_Delete",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get_Pending_Delete": {
+      "main": [
+        [
+          {
+            "node": "Check_Pending_Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check_Pending_Result": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Clear_Pending_Delete": {
+      "main": [
+        [
+          {
+            "node": "Pass_Confirm_Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Clear_Pending_For_Cancel": {
+      "main": [
+        [
+          {
+            "node": "Format_Cancel_Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pre route calendar": {
+      "main": [
+        [
+          {
+            "node": "skip_AI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "skip_AI": {
+      "main": [
+        [
+          {
+            "node": "Route_Intent",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Message a model",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse_Fix_Category": {
+      "main": [
+        [
+          {
+            "node": "Apply_Fix",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse_Selection": {
+      "main": [
+        [
+          {
+            "node": "Execute_Selection",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute_Selection": {
+      "main": [
+        [
+          {
+            "node": "Format_Selection_Result",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Format_Selection_Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format_Selection_Result": {
+      "main": [
+        [
+          {
+            "node": "Pass_Selection_Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Message a model": {
+      "main": [
+        [
+          {
+            "node": "Parse_Intent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Message a model1": {
+      "main": [
+        [
+          {
+            "node": "Format_Chat_Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pass_Delete_Reply": {
+      "main": [
+        [
+          {
+            "node": "Simplexity",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute_Notes_Agent": {
+      "main": [
+        [
+          {
+            "node": "Simplexity",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute_Tasks_Agent": {
+      "main": [
+        [
+          {
+            "node": "Simplexity",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call 'Obsidian_Search_Agent'": {
+      "main": [
+        [
+          {
+            "node": "Simplexity",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format_Chat_Response": {
+      "main": [
+        [
+          {
+            "node": "Simplexity",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pass_Selection_Reply": {
+      "main": [
+        [
+          {
+            "node": "Simplexity",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Apply_Fix": {
+      "main": [
+        [
+          {
+            "node": "Simplexity",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pass_Confirm_Reply": {
+      "main": [
+        [
+          {
+            "node": "Simplexity",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format_Cancel_Reply": {
+      "main": [
+        [
+          {
+            "node": "Simplexity",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": false
+  },
+  "versionId": "1b590659-b863-43e5-a3c0-1857cdcb7a8e",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "a5af9c56908a68ed8b8b4eedf2ab29753e321c82b755d88674ae79dcfc198c21"
+  },
+  "id": "iaexmDecWZLLJxWu",
+  "tags": []
+}
