@@ -1,0 +1,75 @@
+# Optional Local AI Module for Second Brain
+# 
+# This adds Ollama with Gemma 3 12B for fully local AI processing.
+# Requires: NVIDIA GPU with 12GB+ VRAM
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.ollama.yml up -d
+#
+# Or merge into docker-compose.yml if you always want local AI.
+
+services:
+  # ============================================
+  # OLLAMA - Local AI Inference
+  # ============================================
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    restart: unless-stopped
+    ports:
+      - "${OLLAMA_PORT:-11434}:11434"
+    volumes:
+      - ./data/ollama:/root/.ollama
+    environment:
+      - OLLAMA_HOST=0.0.0.0
+      - OLLAMA_ORIGINS=*
+      - TZ=${TZ:-Europe/London}
+      # Optimize for RTX 4060 Ti 16GB / similar GPUs
+      - OLLAMA_NUM_PARALLEL=${OLLAMA_NUM_PARALLEL:-2}
+      - OLLAMA_MAX_LOADED_MODELS=${OLLAMA_MAX_LOADED_MODELS:-1}
+      # Flash attention for better performance
+      - OLLAMA_FLASH_ATTENTION=${OLLAMA_FLASH_ATTENTION:-1}
+    networks:
+      - second-brain-net
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # ============================================
+  # OLLAMA INIT - Model Download (runs once)
+  # ============================================
+  ollama-init:
+    image: ollama/ollama:latest
+    container_name: ollama-init
+    depends_on:
+      ollama:
+        condition: service_healthy
+    volumes:
+      - ./data/ollama:/root/.ollama
+      - ./ollama/init-models.sh:/init-models.sh:ro
+    entrypoint: ["/bin/bash", "/init-models.sh"]
+    environment:
+      - OLLAMA_HOST=ollama:11434
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-gemma3:12b}
+      - TZ=${TZ:-Europe/London}
+    networks:
+      - second-brain-net
+    restart: "no"
+
+# ============================================
+# NETWORK
+# ============================================
+networks:
+  second-brain-net:
+    name: second-brain-net
+    driver: bridge
