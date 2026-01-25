@@ -1374,16 +1374,22 @@ async def smart_capture(capture: ClassifiedCapture):
                     tags=capture.tags
                 )
                 record = await create_project(project)
-                
         elif capture.database == "ideas":
-            idea = IdeaCreate(
-                name=capture.name,
-                one_liner=capture.one_liner or capture.original_text[:100],
-                notes=capture.notes,
-                tags=capture.tags
-            )
-            record = await create_idea(idea)
-            
+            existing = find_by_name("ideas", capture.name)
+            if existing:
+                # Append to existing idea
+                update = IdeaUpdate(append_notes=capture.one_liner or capture.notes)
+                record = await update_idea(existing.id, update)
+
+            else:
+                # Create new idea
+                idea = IdeaCreate(
+                    name=capture.name,
+                    one_liner=capture.one_liner or capture.original_text[:100],
+                    notes=capture.notes,
+                    tags=capture.tags
+                )
+                record = await create_idea(idea)
         elif capture.database == "admin":
             task = AdminCreate(
                 name=capture.name,
