@@ -726,11 +726,62 @@ If your SimpleX profile disappears after container restart, check that:
 # Check bridge logs
 docker compose logs -f simplex-bridge
 
-# Verify n8n webhook is accessible
+# Verify n8n webhook is accessible (production mode)
 curl -X POST http://localhost:5678/webhook/simplex-in \
   -H "Content-Type: application/json" \
-  -d '{"test": true}'
+  -d '{"text": "test", "contactId": 1, "displayName": "Test"}'
 ```
+
+### Testing n8n Webhooks
+
+n8n webhooks have two modes: **Test** and **Production**. Understanding the difference is important for debugging.
+
+| Mode | URL Path | When to Use |
+|------|----------|-------------|
+| **Test** | `/webhook-test/simplex-in` | Debugging in n8n editor (workflow doesn't need to be active) |
+| **Production** | `/webhook/simplex-in` | Live workflow (must be published/active) |
+
+**Production mode** (workflow must be active):
+```bash
+curl -X POST http://localhost:5678/webhook/simplex-in \
+  -H "Content-Type: application/json" \
+  -d '{
+    "source": "simplex",
+    "contactId": 1,
+    "displayName": "Test User",
+    "text": "what'\''s on my calendar today?",
+    "itemId": 999,
+    "ts": 1737628200
+  }'
+```
+
+**Test mode** (for debugging in n8n editor):
+
+1. Open your workflow in n8n (`SimpleX_SecondBrain_Router`)
+2. Click on the `Webhook_SimpleX_In` node
+3. Click **"Listen for Test Event"** or **"Test step"**
+4. In another terminal, send a test request:
+
+```bash
+curl -X POST http://localhost:5678/webhook-test/simplex-in \
+  -H "Content-Type: application/json" \
+  -d '{
+    "source": "simplex",
+    "contactId": 1,
+    "displayName": "Test User",
+    "text": "what'\''s on my calendar today?",
+    "itemId": 999,
+    "ts": 1737628200
+  }'
+```
+
+5. You should see the data appear in n8n, and can then step through the workflow to debug.
+
+**Common webhook issues:**
+
+- **"Workflow could not be started"** → Workflow is not active (for production) or not listening (for test)
+- **404 Not Found** → Wrong path or n8n not running
+- **No response in n8n** → Check you're using the correct mode (test vs production)
 
 ### Ollama Not Responding
 
@@ -904,6 +955,14 @@ nvidia-smi
 | Obsidian API | http://localhost:8765 | Notes management |
 | SimpleX | ws://localhost:5225 | Chat interface |
 | Ollama | http://localhost:11434 | Local AI (optional) |
+
+### Webhook URLs
+
+| Mode | URL | Usage |
+|------|-----|-------|
+| Production | `http://localhost:5678/webhook/simplex-in` | Live workflow (external access) |
+| Production (internal) | `http://n8n:5678/webhook/simplex-in` | SimpleX bridge → n8n (Docker network) |
+| Test | `http://localhost:5678/webhook-test/simplex-in` | Debugging in n8n editor |
 
 ---
 
