@@ -11,10 +11,11 @@ A complete guide to deploying your self-hosted AI personal assistant.
 3. [First-Time Configuration](#first-time-configuration)
 4. [Connecting SimpleX Chat](#connecting-simplex-chat)
 5. [Importing Workflows](#importing-workflows)
-6. [Migrating Existing Data](#migrating-existing-data)
-7. [Verification](#verification)
-8. [Troubleshooting](#troubleshooting)
-9. [Useful Commands](#useful-commands)
+6. [Local AI Setup (Optional)](#local-ai-setup-optional)
+7. [Migrating Existing Data](#migrating-existing-data)
+8. [Verification](#verification)
+9. [Troubleshooting](#troubleshooting)
+10. [Useful Commands](#useful-commands)
 
 ---
 
@@ -24,6 +25,7 @@ A complete guide to deploying your self-hosted AI personal assistant.
 
 - **Minimum:** 4GB RAM, 2 CPU cores, 20GB storage
 - **Recommended:** 8GB RAM, 4 CPU cores, 100GB+ storage
+- **For Local AI:** NVIDIA GPU with 12GB+ VRAM, 32GB+ RAM, 50GB+ storage
 
 ### Software Requirements
 
@@ -402,12 +404,14 @@ second brain/
 
 Credentials are NOT included in workflow exports. You need to recreate:
 
-- **OpenAI API Key:**
+- **OpenAI API Key** (if using cloud AI):
   - Settings → Credentials → Add credential
   - Select "OpenAI API"
   - Paste your API key
 
 - **Other APIs** as needed
+
+> **Note:** If you're using local AI with Ollama, you don't need OpenAI credentials. See [Local AI Setup](#local-ai-setup-optional).
 
 ### Updating Credential References
 
@@ -422,6 +426,133 @@ Credentials are NOT included in workflow exports. You need to recreate:
 ### If Starting Fresh
 
 Import the example workflows from `n8n/workflows/` directory, then customize for your needs.
+
+---
+
+## Local AI Setup (Optional)
+
+For complete privacy, you can run AI inference locally using Ollama and Gemma 3 12B. This eliminates all external API calls—your data never leaves your machine.
+
+### Hardware Requirements
+
+| Component | Minimum | Recommended |
+|-----------|---------|-------------|
+| GPU | NVIDIA 8GB VRAM | NVIDIA 12GB+ VRAM |
+| RAM | 32GB | 64GB |
+| Storage | 20GB free | 50GB free |
+| CUDA | 11.8+ | 12.x |
+
+**Tested configurations:**
+- ✅ RTX 4060 Ti 16GB, RTX 3080 10GB, RTX 4070 12GB
+- ⚠️ RTX 3060 12GB (works but tight on VRAM)
+- ❌ GPUs with less than 8GB VRAM
+
+### Step 1: Install NVIDIA Container Toolkit
+
+```bash
+# Add NVIDIA container toolkit repository
+distribution=$(. /etc/os-release;echo $ID$VERSION_ID)
+curl -s -L https://nvidia.github.io/nvidia-docker/gpgkey | sudo apt-key add -
+curl -s -L https://nvidia.github.io/nvidia-docker/$distribution/nvidia-docker.list | \
+    sudo tee /etc/apt/sources.list.d/nvidia-docker.list
+
+# Install
+sudo apt update
+sudo apt install -y nvidia-container-toolkit
+
+# Configure Docker
+sudo nvidia-ctk runtime configure --runtime=docker
+sudo systemctl restart docker
+
+# Verify GPU access from Docker
+docker run --rm --gpus all nvidia/cuda:12.0-base nvidia-smi
+```
+
+### Step 2: Run the Setup Script
+
+```bash
+cd ~/second-brain
+./scripts/enable-local-ai.sh
+```
+
+This will:
+- Check for NVIDIA GPU and drivers
+- Verify Docker can access the GPU
+- Create `data/ollama/` directory
+- Add Ollama variables to `.env`
+- Start Ollama container
+- Download Gemma 3 12B model (~12GB, takes 10-30 minutes)
+- Run a quick test
+
+### Step 3: Start with Local AI
+
+From now on, start Second Brain with the Ollama overlay:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.ollama.yml up -d
+```
+
+### Step 4: Configure n8n for Ollama
+
+See [ollama/N8N_OLLAMA_CONFIG.md](ollama/N8N_OLLAMA_CONFIG.md) for detailed instructions on updating your n8n workflows to use local AI instead of OpenAI.
+
+**Quick summary:**
+1. Replace OpenAI nodes with HTTP Request nodes pointing to `http://ollama:11434`
+2. Add JSON parsing Code nodes after Ollama calls
+3. Use the optimized prompts from `ollama/prompts/GEMMA3_PROMPTS.md`
+
+### Step 5: Verify Ollama is Working
+
+```bash
+# Check Ollama is running
+curl http://localhost:11434/api/tags
+
+# Test inference
+curl http://localhost:11434/api/generate -d '{
+  "model": "gemma3:12b",
+  "prompt": "Say hello",
+  "stream": false
+}'
+```
+
+### Running Without Local AI
+
+If you don't have a compatible GPU or prefer cloud AI:
+
+```bash
+# Standard startup (uses OpenAI or other cloud APIs)
+docker compose up -d
+```
+
+### Switching Between Local and Cloud AI
+
+You can switch anytime:
+
+```bash
+# With local AI
+docker compose -f docker-compose.yml -f docker-compose.ollama.yml up -d
+
+# Without local AI (stop Ollama, use cloud)
+docker compose down
+docker compose up -d
+```
+
+### Alternative Models
+
+If Gemma 3 12B is too large for your GPU:
+
+```bash
+# Pull a smaller model
+docker exec ollama ollama pull gemma3:12b-q4_K_M  # ~7GB VRAM
+# or
+docker exec ollama ollama pull mistral:7b          # ~6GB VRAM
+# or  
+docker exec ollama ollama pull llama3.2:3b         # ~3GB VRAM
+
+# Update .env
+nano .env
+# Change: OLLAMA_MODEL=gemma3:12b-q4_K_M
+```
 
 ---
 
@@ -479,7 +610,7 @@ docker compose restart
 docker compose ps
 ```
 
-**Expected output:**
+**Expected output (without local AI):**
 
 ```
 NAME                STATUS              PORTS
@@ -490,6 +621,12 @@ nextcloud-db        Up (healthy)
 obsidian-api        Up (healthy)        0.0.0.0:8765->8000/tcp
 simplex-bridge      Up
 simplex-chat-cli    Up                  0.0.0.0:5225->5225/tcp
+```
+
+**With local AI, you'll also see:**
+
+```
+ollama              Up (healthy)        0.0.0.0:11434->11434/tcp
 ```
 
 ### Test Each Service
@@ -510,6 +647,12 @@ curl -s http://localhost:8765/health
 ```bash
 curl -s http://localhost:8088/status.php
 # Should return JSON with "installed":true
+```
+
+**Ollama (if enabled):**
+```bash
+curl -s http://localhost:11434/api/tags
+# Should return JSON with model list
 ```
 
 ### Test End-to-End
@@ -589,6 +732,38 @@ curl -X POST http://localhost:5678/webhook/simplex-in \
   -d '{"test": true}'
 ```
 
+### Ollama Not Responding
+
+```bash
+# Check Ollama logs
+docker compose logs -f ollama
+
+# Check GPU is accessible
+nvidia-smi
+
+# Check model is loaded
+curl http://localhost:11434/api/tags
+
+# Test inference
+curl http://localhost:11434/api/generate -d '{"model":"gemma3:12b","prompt":"Hi"}'
+```
+
+### Ollama Out of Memory
+
+If you see CUDA out of memory errors:
+
+```bash
+# Use a smaller quantization
+docker exec ollama ollama pull gemma3:12b-q4_K_M
+
+# Update .env
+nano .env
+# Change OLLAMA_MODEL to the smaller model
+
+# Restart
+docker compose -f docker-compose.yml -f docker-compose.ollama.yml restart ollama
+```
+
 ### Permission Errors
 
 ```bash
@@ -628,6 +803,7 @@ docker compose logs -f
 # View specific service logs
 docker compose logs -f n8n
 docker compose logs -f simplex-bridge
+docker compose logs -f ollama
 
 # Restart all services
 docker compose restart
@@ -638,8 +814,11 @@ docker compose restart n8n
 # Stop all services
 docker compose down
 
-# Start all services
+# Start all services (without local AI)
 docker compose up -d
+
+# Start all services (with local AI)
+docker compose -f docker-compose.yml -f docker-compose.ollama.yml up -d
 ```
 
 ### Backup & Restore
@@ -679,6 +858,9 @@ docker exec -it nextcloud /bin/bash
 
 # SimpleX CLI (if profile already exists)
 docker exec -it simplex-chat-cli simplex-chat -d /home/simplex/.simplex/simplex
+
+# Ollama CLI
+docker exec -it ollama ollama list
 ```
 
 ### SimpleX Management
@@ -695,6 +877,22 @@ sudo rm -rf data/simplex/*
 # Then follow "Connecting SimpleX Chat" section again
 ```
 
+### Ollama Management
+
+```bash
+# List models
+docker exec ollama ollama list
+
+# Pull a new model
+docker exec ollama ollama pull mistral:7b
+
+# Remove a model
+docker exec ollama ollama rm gemma3:12b
+
+# Check GPU usage
+nvidia-smi
+```
+
 ---
 
 ## Service URLs
@@ -705,6 +903,7 @@ sudo rm -rf data/simplex/*
 | Nextcloud | http://localhost:8088 | Calendar (CalDAV) |
 | Obsidian API | http://localhost:8765 | Notes management |
 | SimpleX | ws://localhost:5225 | Chat interface |
+| Ollama | http://localhost:11434 | Local AI (optional) |
 
 ---
 
@@ -715,6 +914,7 @@ sudo rm -rf data/simplex/*
 - **Firewall** - only expose ports you need externally
 - **Backups** - run `./scripts/backup.sh` regularly
 - **Updates** - keep Docker and images updated
+- **Local AI** - Ollama API has no authentication (internal use only)
 
 ---
 
@@ -722,6 +922,7 @@ sudo rm -rf data/simplex/*
 
 - Check [Troubleshooting](#troubleshooting) section
 - Review logs: `docker compose logs -f`
+- Local AI docs: [ollama/README.md](ollama/README.md)
 - Open an issue on GitHub
 
 ---
