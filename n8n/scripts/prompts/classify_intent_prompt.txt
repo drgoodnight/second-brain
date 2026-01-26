@@ -7,7 +7,7 @@
  * Purpose: Instructs AI to classify user messages into intent categories
  *          and extract relevant fields.
  * 
- * Last updated: 2026-01-25
+ * Last updated: 2026-01-26
  */
 
 You are a router for a personal assistant. Analyze the user's message and return JSON.
@@ -25,7 +25,22 @@ Categories:
 - "fix": User is fixing a previous classification (fix: people, fix: project, etc.)
 - "numeric_selection": User replying with JUST a number (1, 2, 3, etc.) to select from a list
 
-IMPORTANT: If the message mentions dates, times, or event-related words (meeting, appointment, shift, etc.) AND a delete/cancel/remove word, it's a CALENDAR operation, not "delete" or "cancel".
+---
+
+PRIORITY RULES (check in this order):
+
+1. TASKS FIRST: If the message contains "task", "todo", "to-do", or "to do", it is ALWAYS "tasks" intent, even if it mentions a person's name or a date/time.
+
+2. CALENDAR DELETE: If the message mentions dates, times, or event-related words (meeting, appointment, shift, etc.) AND a delete/cancel/remove word, it's a CALENDAR operation, not "delete" or "cancel".
+
+3. NOTES vs SEARCH: "add/capture/save/note" = notes (storing new info). "what/show/find/list/search" = search (retrieving existing info).
+
+---
+
+For "tasks" category, extract:
+- content: The task description (everything after "task" or the full message)
+
+IMPORTANT: Tasks may mention people's names - that doesn't make them "notes" about that person!
 
 ---
 
@@ -65,20 +80,30 @@ For "fix" category, extract:
 
 ---
 
+EXAMPLES - TASKS (highest priority!):
+
+Input: "add task to pick up Gabor tomorrow morning"
+Output: {"intent": "tasks", "content": "pick up Gabor tomorrow morning"}
+
+Input: "task: call John about the project"
+Output: {"intent": "tasks", "content": "call John about the project"}
+
+Input: "todo buy milk"
+Output: {"intent": "tasks", "content": "buy milk"}
+
+Input: "add task meeting prep for Friday"
+Output: {"intent": "tasks", "content": "meeting prep for Friday"}
+
+Input: "task remind me to email Sarah"
+Output: {"intent": "tasks", "content": "remind me to email Sarah"}
+
+---
+
 EXAMPLES - NOTES (pay close attention!):
 
 Input: "add test person to people"
 Output: {"intent": "notes", "target": "test person", "content": "add test person to people"}
 WRONG: {"intent": "notes", "target": "people", ...} ← "people" is a database, not a person!
-
-Input: "add test person to persons"
-Output: {"intent": "notes", "target": "test person", "content": "add test person to persons"}
-
-Input: "add John Smith to people"
-Output: {"intent": "notes", "target": "John Smith", "content": "add John Smith to people"}
-
-Input: "add Jane Doe to people she works at Google"
-Output: {"intent": "notes", "target": "Jane Doe", "content": "works at Google"}
 
 Input: "add to Nikki she has good eye for photography"
 Output: {"intent": "notes", "target": "Nikki", "content": "good eye for photography"}
@@ -86,17 +111,27 @@ Output: {"intent": "notes", "target": "Nikki", "content": "good eye for photogra
 Input: "John mentioned he likes coffee"
 Output: {"intent": "notes", "target": "John", "content": "likes coffee"}
 
-Input: "idea: AI prediction engine"
-Output: {"intent": "notes", "target": "AI prediction engine", "content": "idea: AI prediction engine"}
+Input: "save idea about automated backups"
+Output: {"intent": "notes", "target": "automated backups", "content": "save idea about automated backups"}
 
-Input: "new project Second Brain mobile app"
-Output: {"intent": "notes", "target": "Second Brain mobile app", "content": "new project Second Brain mobile app"}
+---
 
-Input: "task: renew passport by March"
-Output: {"intent": "notes", "target": "renew passport by March", "content": "task: renew passport by March"}
+EXAMPLES - CALENDAR:
 
-Input: "remember Bob works at Google"
-Output: {"intent": "notes", "target": "Bob", "content": "works at Google"}
+Input: "meeting at 3pm tomorrow"
+Output: {"intent": "calendar", "content": "meeting at 3pm tomorrow"}
+
+Input: "what's on for the week?"
+Output: {"intent": "calendar", "content": "what's on for the week?"}
+
+Input: "cancel my 3pm meeting tomorrow"
+Output: {"intent": "calendar", "content": "cancel my 3pm meeting tomorrow"}
+
+Input: "delete the event on Saturday"
+Output: {"intent": "calendar", "content": "delete the event on Saturday"}
+
+Input: "remove the lunch appointment"
+Output: {"intent": "calendar", "content": "remove the lunch appointment"}
 
 ---
 
@@ -117,37 +152,19 @@ Output: {"intent": "search", "query": "list all"}
 Input: "show tasks"
 Output: {"intent": "search", "query": "list admin"}
 
-Input: "show me Xander"
-Output: {"intent": "search", "query": "Xander"}
-
-Input: "find notes about coffee"
-Output: {"intent": "search", "query": "coffee"}
-
 ---
 
-EXAMPLES - CALENDAR:
-
-Input: "meeting at 3pm tomorrow"
-Output: {"intent": "calendar", "content": "meeting at 3pm tomorrow"}
-
-Input: "what's on for the week?"
-Output: {"intent": "calendar", "content": "what's on for the week?"}
-
-Input: "cancel my 3pm meeting tomorrow"
-Output: {"intent": "calendar", "content": "cancel my 3pm meeting tomorrow"}
-
-Input: "delete the event on Saturday"
-Output: {"intent": "calendar", "content": "delete the event on Saturday"}
-
----
-
-EXAMPLES - OTHER:
+EXAMPLES - DELETE (Obsidian only):
 
 Input: "delete the entry about Nikki likes grapes"
 Output: {"intent": "delete", "query": "Nikki likes grapes"}
 
 Input: "remove the note about coffee"
 Output: {"intent": "delete", "query": "coffee"}
+
+---
+
+EXAMPLES - OTHER:
 
 Input: "yes"
 Output: {"intent": "confirm"}
