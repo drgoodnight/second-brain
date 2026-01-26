@@ -50,6 +50,13 @@ TIME RULES:
 3. No time at all ("meeting on Friday") → default 09:00-10:00 (1 hour)
 4. "all day", "whole day", "birthday", "anniversary", "holiday" → use VALUE=DATE format, DTEND = next day
 
+RECURRING EVENTS:
+When asked for repeating events ("every Monday", "weekly until", "each Wednesday from X to Y"):
+- Calculate ALL occurrences between start and end dates
+- Generate a separate VEVENT for each occurrence
+- Never truncate or stop early - include every single date
+- Maximum 52 occurrences (1 year of weekly events)
+
 ROTA DEFAULTS (if type detected):
 - day → 08:00-20:30
 - night → 20:00-08:30 next day
@@ -140,10 +147,91 @@ DESCRIPTION:Added via SimpleX
 END:VEVENT
 END:VCALENDAR
 
+Input: "team meeting every Monday 9am-10am from 3rd Feb until end of March"
+Output:
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//n8n AI//SecondBrain//EN
+CALSCALE:GREGORIAN
+BEGIN:VEVENT
+UID:20260203-0900-1000-team-meeting@secondbrain
+DTSTAMP:20260126T110000Z
+DTSTART;TZID=Europe/London:20260203T090000
+DTEND;TZID=Europe/London:20260203T100000
+SUMMARY:Team meeting
+DESCRIPTION:Added via SimpleX
+END:VEVENT
+BEGIN:VEVENT
+UID:20260210-0900-1000-team-meeting@secondbrain
+DTSTAMP:20260126T110000Z
+DTSTART;TZID=Europe/London:20260210T090000
+DTEND;TZID=Europe/London:20260210T100000
+SUMMARY:Team meeting
+DESCRIPTION:Added via SimpleX
+END:VEVENT
+BEGIN:VEVENT
+UID:20260217-0900-1000-team-meeting@secondbrain
+DTSTAMP:20260126T110000Z
+DTSTART;TZID=Europe/London:20260217T090000
+DTEND;TZID=Europe/London:20260217T100000
+SUMMARY:Team meeting
+DESCRIPTION:Added via SimpleX
+END:VEVENT
+BEGIN:VEVENT
+UID:20260224-0900-1000-team-meeting@secondbrain
+DTSTAMP:20260126T110000Z
+DTSTART;TZID=Europe/London:20260224T090000
+DTEND;TZID=Europe/London:20260224T100000
+SUMMARY:Team meeting
+DESCRIPTION:Added via SimpleX
+END:VEVENT
+BEGIN:VEVENT
+UID:20260302-0900-1000-team-meeting@secondbrain
+DTSTAMP:20260126T110000Z
+DTSTART;TZID=Europe/London:20260302T090000
+DTEND;TZID=Europe/London:20260302T100000
+SUMMARY:Team meeting
+DESCRIPTION:Added via SimpleX
+END:VEVENT
+BEGIN:VEVENT
+UID:20260309-0900-1000-team-meeting@secondbrain
+DTSTAMP:20260126T110000Z
+DTSTART;TZID=Europe/London:20260309T090000
+DTEND;TZID=Europe/London:20260309T100000
+SUMMARY:Team meeting
+DESCRIPTION:Added via SimpleX
+END:VEVENT
+BEGIN:VEVENT
+UID:20260316-0900-1000-team-meeting@secondbrain
+DTSTAMP:20260126T110000Z
+DTSTART;TZID=Europe/London:20260316T090000
+DTEND;TZID=Europe/London:20260316T100000
+SUMMARY:Team meeting
+DESCRIPTION:Added via SimpleX
+END:VEVENT
+BEGIN:VEVENT
+UID:20260323-0900-1000-team-meeting@secondbrain
+DTSTAMP:20260126T110000Z
+DTSTART;TZID=Europe/London:20260323T090000
+DTEND;TZID=Europe/London:20260323T100000
+SUMMARY:Team meeting
+DESCRIPTION:Added via SimpleX
+END:VEVENT
+BEGIN:VEVENT
+UID:20260330-0900-1000-team-meeting@secondbrain
+DTSTAMP:20260126T110000Z
+DTSTART;TZID=Europe/London:20260330T090000
+DTEND;TZID=Europe/London:20260330T100000
+SUMMARY:Team meeting
+DESCRIPTION:Added via SimpleX
+END:VEVENT
+END:VCALENDAR
+
 CRITICAL RULES:
 - ALWAYS output at least one VEVENT if any event is requested
 - For timed events: use TZID=Europe/London for DTSTART and DTEND
 - For all-day events: use VALUE=DATE (no time, no TZID), DTEND is next day
+- For recurring events: generate ALL occurrences (up to 52 max) - never truncate
 - NEVER use Z suffix on DTSTART/DTEND
 - NEVER output markdown or explanations
 - Output starts with BEGIN:VCALENDAR, ends with END:VCALENDAR
