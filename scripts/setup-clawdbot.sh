@@ -7,8 +7,7 @@
 # 2. Create directory structure
 # 3. Generate security tokens
 # 4. Create configuration files
-# 5. Build sandbox image
-# 6. Start Clawdbot
+# 5. Start Clawdbot
 #
 # Usage: ./scripts/setup-clawdbot.sh
 #
@@ -43,7 +42,7 @@ cd "$PROJECT_ROOT"
 # ============================================
 # STEP 1: Pre-flight checks
 # ============================================
-echo -e "${YELLOW}[1/9] Running pre-flight checks...${NC}"
+echo -e "${YELLOW}[1/8] Running pre-flight checks...${NC}"
 
 # Check Docker
 if ! command -v docker &> /dev/null; then
@@ -93,7 +92,7 @@ echo ""
 # ============================================
 # STEP 2: Clone/Update Clawdbot source
 # ============================================
-echo -e "${YELLOW}[2/9] Setting up Clawdbot source code...${NC}"
+echo -e "${YELLOW}[2/8] Setting up Clawdbot source code...${NC}"
 
 if [ -d "$CLAWDBOT_SOURCE_DIR" ]; then
     echo "  Found existing Clawdbot source at $CLAWDBOT_SOURCE_DIR"
@@ -118,7 +117,7 @@ echo ""
 # ============================================
 # STEP 3: Build Clawdbot Docker image
 # ============================================
-echo -e "${YELLOW}[3/9] Building Clawdbot Docker image (this may take 5-10 minutes)...${NC}"
+echo -e "${YELLOW}[3/8] Building Clawdbot Docker image (this may take 5-10 minutes)...${NC}"
 
 # Check if image already exists
 if docker images | grep -q "^clawdbot.*local"; then
@@ -141,7 +140,7 @@ echo ""
 # ============================================
 # STEP 4: Create directory structure
 # ============================================
-echo -e "${YELLOW}[4/9] Creating directory structure...${NC}"
+echo -e "${YELLOW}[4/8] Creating directory structure...${NC}"
 
 mkdir -p "$PROJECT_ROOT/data/clawdbot/config"
 mkdir -p "$PROJECT_ROOT/data/clawdbot/state"
@@ -155,7 +154,7 @@ echo ""
 # ============================================
 # STEP 5: Generate security tokens
 # ============================================
-echo -e "${YELLOW}[5/9] Generating security tokens...${NC}"
+echo -e "${YELLOW}[5/8] Generating security tokens...${NC}"
 
 GATEWAY_TOKEN=$(openssl rand -hex 32)
 HOOKS_TOKEN=$(openssl rand -hex 32)
@@ -189,7 +188,7 @@ echo ""
 # ============================================
 # STEP 6: Create clawdbot.json
 # ============================================
-echo -e "${YELLOW}[6/9] Creating clawdbot.json configuration...${NC}"
+echo -e "${YELLOW}[6/8] Creating clawdbot.json configuration...${NC}"
 
 # NOTE: Clawdbot config schema is strict. Key learnings:
 # - cpus must be a number (1.0), not a string ("1.0")
@@ -198,6 +197,10 @@ echo -e "${YELLOW}[6/9] Creating clawdbot.json configuration...${NC}"
 # - channels don't have an "enabled" field - just omit them
 # - "model" and "memory" are NOT root-level keys
 # - "session.pruning" does not exist
+# - Ollama provider needs: baseUrl with /v1 suffix, api: "openai-completions", apiKey (dummy)
+# - contextWindow must be >= 16000 for Clawdbot
+# - sandbox.mode: "off" when running in Docker (can't do Docker-in-Docker)
+# - HTTP API must be enabled for n8n integration
 
 cat > "$PROJECT_ROOT/data/clawdbot/config/clawdbot.json" << 'CLAWDBOT_CONFIG'
 {
@@ -210,6 +213,13 @@ cat > "$PROJECT_ROOT/data/clawdbot/config/clawdbot.json" << 'CLAWDBOT_CONFIG'
     },
     "controlUi": {
       "enabled": false
+    },
+    "http": {
+      "endpoints": {
+        "chatCompletions": {
+          "enabled": true
+        }
+      }
     }
   },
 
@@ -232,17 +242,7 @@ cat > "$PROJECT_ROOT/data/clawdbot/config/clawdbot.json" << 'CLAWDBOT_CONFIG'
       },
       "workspace": "/workspace",
       "sandbox": {
-        "mode": "all",
-        "scope": "session",
-        "workspaceAccess": "ro",
-        "docker": {
-          "image": "clawdbot-sandbox:bookworm-slim",
-          "network": "none",
-          "user": "1000:1000",
-          "memory": "512m",
-          "cpus": 1.0,
-          "pidsLimit": 100
-        }
+        "mode": "off"
       }
     },
     "list": [
@@ -256,8 +256,7 @@ cat > "$PROJECT_ROOT/data/clawdbot/config/clawdbot.json" << 'CLAWDBOT_CONFIG'
         "tools": {
           "profile": "minimal",
           "allow": [
-            "read",
-            "memory"
+            "read"
           ],
           "deny": [
             "write",
@@ -280,13 +279,18 @@ cat > "$PROJECT_ROOT/data/clawdbot/config/clawdbot.json" << 'CLAWDBOT_CONFIG'
   "models": {
     "providers": {
       "ollama": {
-        "baseUrl": "http://ollama:11434",
+        "baseUrl": "http://ollama:11434/v1",
+        "apiKey": "ollama-local",
+        "api": "openai-completions",
         "models": [
           {
             "id": "gemma3:12b",
             "name": "Gemma 3 12B",
-            "contextWindow": 8192,
-            "maxTokens": 4096
+            "reasoning": false,
+            "input": ["text"],
+            "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 },
+            "contextWindow": 32000,
+            "maxTokens": 8192
           }
         ]
       }
@@ -299,79 +303,53 @@ echo "  ✓ Created clawdbot.json"
 echo ""
 
 # ============================================
-# STEP 7: Create docker-compose.clawdbot.yml
+# STEP 7: Create workspace files
 # ============================================
-echo -e "${YELLOW}[7/9] Creating docker-compose.clawdbot.yml...${NC}"
+echo -e "${YELLOW}[7/8] Creating workspace files...${NC}"
 
-# NOTE: Key learnings:
-# - Don't use "external: true" for network - it's defined in main compose
-# - --bind must be "lan" not "0.0.0.0"
-# - Healthcheck uses /__clawdbot__/canvas/ endpoint (no /health endpoint)
-# - Don't set memory limits - let it use what it needs (OOM otherwise)
+# Create AGENTS.md for system prompt
+cat > "$PROJECT_ROOT/data/clawdbot/workspace/second-brain/AGENTS.md" << 'AGENTS_MD'
+# Second Brain Assistant
 
-cat > "$PROJECT_ROOT/docker-compose.clawdbot.yml" << 'COMPOSE_CONFIG'
-# Clawdbot integration for Second Brain
-# Built from source: https://github.com/clawdbot/clawdbot
-#
-# Usage: docker compose -f docker-compose.yml -f docker-compose.ollama.yml -f docker-compose.clawdbot.yml up -d
+You are a helpful AI assistant integrated into a personal Second Brain system. You help the user with complex reasoning, analysis, and remembering information.
 
-services:
-  clawdbot-gateway:
-    image: clawdbot:local
-    container_name: clawdbot-gateway
-    restart: unless-stopped
-    environment:
-      - HOME=/home/node
-      - NODE_ENV=production
-      - CLAWDBOT_CONFIG_PATH=/config/clawdbot.json
-      - CLAWDBOT_STATE_DIR=/state
-      - CLAWDBOT_WORKSPACE_DIR=/workspace
-      - CLAWDBOT_GATEWAY_TOKEN=${CLAWDBOT_GATEWAY_TOKEN:?Required}
-      - CLAWDBOT_HOOKS_TOKEN=${CLAWDBOT_HOOKS_TOKEN}
-      - CLAWDBOT_DISABLE_BONJOUR=1
-      - OLLAMA_HOST=ollama
-      - OLLAMA_PORT=11434
-      - TZ=${TZ:-Europe/London}
-    volumes:
-      - ./data/clawdbot/config:/config:ro
-      - ./data/clawdbot/state:/state
-      - ./data/clawdbot/workspace:/workspace
-      - ./data/vault:/vault:ro
-    networks:
-      - second-brain-net
-    depends_on:
-      ollama:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:18789/__clawdbot__/canvas/ | grep -q Clawdbot"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 60s
-    command:
-      [
-        "node",
-        "dist/index.js",
-        "gateway",
-        "--bind",
-        "lan",
-        "--port",
-        "18789"
-      ]
+## Your Capabilities
+- Complex reasoning and analysis
+- Remembering information the user tells you
+- Answering questions thoughtfully
+- Helping with planning and decision-making
 
-networks:
-  second-brain-net:
-    name: second-brain-net
-    driver: bridge
-COMPOSE_CONFIG
+## Your Personality
+- Friendly but concise
+- Thoughtful and thorough when needed
+- You remember what the user tells you across conversations
 
-echo "  ✓ Created docker-compose.clawdbot.yml"
+## Guidelines
+- Keep responses focused and helpful
+- Ask clarifying questions when needed
+- Remember important information the user shares
+- Be honest when you don't know something
+AGENTS_MD
+
+# Create MEMORY.md for persistent facts
+cat > "$PROJECT_ROOT/data/clawdbot/workspace/second-brain/MEMORY.md" << 'MEMORY_MD'
+# Memory
+
+## User Information
+- (Clawdbot will add remembered facts here)
+
+## Important Notes
+- (Important information goes here)
+MEMORY_MD
+
+echo "  ✓ Created AGENTS.md"
+echo "  ✓ Created MEMORY.md"
 echo ""
 
 # ============================================
-# STEP 8: Set permissions & build sandbox
+# STEP 8: Set permissions & start
 # ============================================
-echo -e "${YELLOW}[8/9] Setting permissions and building sandbox image...${NC}"
+echo -e "${YELLOW}[8/8] Setting permissions and starting Clawdbot...${NC}"
 
 # Set permissions - IMPORTANT: 600 for config to pass security audit
 chmod 700 "$PROJECT_ROOT/data/clawdbot/config"
@@ -380,31 +358,6 @@ chmod 700 "$PROJECT_ROOT/data/clawdbot/state"
 chmod 755 "$PROJECT_ROOT/data/clawdbot/workspace"
 
 echo "  ✓ Set restrictive permissions (600 for config)"
-
-# Build sandbox image if not exists
-if ! docker images | grep -q "clawdbot-sandbox.*bookworm-slim"; then
-    echo "  Building sandbox image..."
-    docker build -t clawdbot-sandbox:bookworm-slim - << 'DOCKERFILE'
-FROM debian:bookworm-slim
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates \
-    curl \
-    && rm -rf /var/lib/apt/lists/*
-USER 1000:1000
-WORKDIR /workspace
-DOCKERFILE
-    echo "  ✓ Built clawdbot-sandbox:bookworm-slim"
-else
-    echo "  ✓ Sandbox image already exists"
-fi
-echo ""
-
-# ============================================
-# STEP 9: Start Clawdbot
-# ============================================
-echo -e "${YELLOW}[9/9] Starting Clawdbot...${NC}"
-
-cd "$PROJECT_ROOT"
 
 # Start with Ollama dependency
 if docker ps --format '{{.Names}}' | grep -q "^ollama$"; then
@@ -443,10 +396,19 @@ if docker ps --format '{{.Names}}' | grep -q "^clawdbot-gateway$"; then
         echo -e "${YELLOW}⚠ Gateway still starting (check logs)${NC}"
     fi
     
-    # Check status
-    echo ""
-    echo "Clawdbot Status:"
-    docker exec clawdbot-gateway node dist/index.js status 2>/dev/null | head -20 || echo "  (status check requires token setup)"
+    # Test HTTP API
+    TOKEN=$(grep "CLAWDBOT_GATEWAY_TOKEN" "$PROJECT_ROOT/.env" | cut -d= -f2)
+    API_TEST=$(docker exec clawdbot-gateway curl -sS --max-time 30 http://localhost:18789/v1/chat/completions \
+      -H "Authorization: Bearer $TOKEN" \
+      -H "Content-Type: application/json" \
+      -H "x-clawdbot-agent-id: second-brain" \
+      -d '{"model":"clawdbot","messages":[{"role":"user","content":"Say hi"}]}' 2>/dev/null | grep -c "choices" || echo "0")
+    
+    if [ "$API_TEST" -gt 0 ]; then
+        echo -e "${GREEN}✓ HTTP API is working${NC}"
+    else
+        echo -e "${YELLOW}⚠ HTTP API not responding yet (may need more time)${NC}"
+    fi
 else
     echo -e "${RED}❌ Clawdbot container not running${NC}"
     echo "  Check logs: docker logs clawdbot-gateway"
@@ -462,18 +424,20 @@ echo "  • Docker Compose:    docker-compose.clawdbot.yml"
 echo ""
 echo "Security Settings:"
 echo "  • All channels:      DISABLED (using SimpleX via n8n)"
-echo "  • Sandbox mode:      ALL sessions sandboxed"
+echo "  • Sandbox mode:      OFF (Docker-in-Docker not supported)"
 echo "  • Dangerous tools:   BLOCKED (exec, write, browser, etc.)"
-echo "  • Memory:            ENABLED"
+echo "  • HTTP API:          ENABLED for n8n integration"
+echo ""
+echo "n8n Integration:"
+echo "  • URL:               http://clawdbot-gateway:18789/v1/chat/completions"
+echo "  • Auth Header:       Authorization: Bearer <CLAWDBOT_GATEWAY_TOKEN>"
+echo "  • Agent Header:      x-clawdbot-agent-id: second-brain"
 echo ""
 echo "Commands:"
 echo "  • View logs:         docker logs -f clawdbot-gateway"
 echo "  • Check status:      docker exec clawdbot-gateway node dist/index.js status"
 echo "  • Restart:           docker compose -f docker-compose.yml -f docker-compose.ollama.yml -f docker-compose.clawdbot.yml restart clawdbot-gateway"
 echo "  • Stop:              docker compose -f docker-compose.yml -f docker-compose.ollama.yml -f docker-compose.clawdbot.yml stop clawdbot-gateway"
-echo "  • Rebuild image:     cd $CLAWDBOT_SOURCE_DIR && docker build -t clawdbot:local ."
 echo ""
 echo -e "${GREEN}Clawdbot is now integrated with your Second Brain! 🧠🦞${NC}"
-echo ""
-echo "Next step: Connect Clawdbot to n8n via WebSocket for AI reasoning tasks."
 echo ""

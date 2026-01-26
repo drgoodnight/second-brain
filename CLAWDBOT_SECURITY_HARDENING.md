@@ -4,7 +4,7 @@
 
 This guide covers integrating Clawdbot into your Second Brain system with proper security hardening for use with local Ollama/Gemma 3 12B.
 
-**Key Principle:** Gemma 3 12B has weaker prompt injection resistance than frontier models. We restrict dangerous tools and sandbox all executions.
+**Key Principle:** Gemma 3 12B has weaker prompt injection resistance than frontier models. We restrict dangerous tools and rely on tool deny lists for security (sandbox disabled due to Docker-in-Docker limitations).
 
 ---
 
@@ -24,10 +24,10 @@ The script handles everything: cloning source, building Docker image, creating c
 ```
 SimpleX App → SimpleX Bridge → n8n → Clawdbot Gateway → Ollama (Gemma 3 12B)
                                          ↓
-                                   Sandboxed Execution
+                                   HTTP API (/v1/chat/completions)
 ```
 
-Clawdbot runs as an internal service on `second-brain-net`. It's invoked by n8n for AI reasoning tasks, not as a standalone messaging endpoint.
+Clawdbot runs as an internal service on `second-brain-net`. It's invoked by n8n via HTTP API for AI reasoning tasks, not as a standalone messaging endpoint.
 
 ---
 
@@ -44,6 +44,10 @@ Clawdbot's config schema is **strict**. Here are the gotchas we discovered:
 | Model config | Root-level `"model"` | `agents.defaults.model` or `models.providers` |
 | Memory config | Root-level `"memory"` | Not a config key - memory is a plugin |
 | Session pruning | `"session.pruning"` | Does not exist |
+| Ollama baseUrl | `http://ollama:11434` | `http://ollama:11434/v1` (needs /v1) |
+| Ollama API | (missing) | `"api": "openai-completions"` (required) |
+| Ollama auth | (missing) | `"apiKey": "ollama-local"` (dummy value required) |
+| Context window | `8192` | `32000` (minimum 16000 required) |
 
 ### Valid `gateway.bind` Values
 
@@ -70,6 +74,13 @@ Clawdbot's config schema is **strict**. Here are the gotchas we discovered:
     },
     "controlUi": {
       "enabled": false
+    },
+    "http": {
+      "endpoints": {
+        "chatCompletions": {
+          "enabled": true
+        }
+      }
     }
   },
 
@@ -92,17 +103,7 @@ Clawdbot's config schema is **strict**. Here are the gotchas we discovered:
       },
       "workspace": "/workspace",
       "sandbox": {
-        "mode": "all",
-        "scope": "session",
-        "workspaceAccess": "ro",
-        "docker": {
-          "image": "clawdbot-sandbox:bookworm-slim",
-          "network": "none",
-          "user": "1000:1000",
-          "memory": "512m",
-          "cpus": 1.0,
-          "pidsLimit": 100
-        }
+        "mode": "off"
       }
     },
     "list": [
@@ -116,8 +117,7 @@ Clawdbot's config schema is **strict**. Here are the gotchas we discovered:
         "tools": {
           "profile": "minimal",
           "allow": [
-            "read",
-            "memory"
+            "read"
           ],
           "deny": [
             "write",
@@ -140,13 +140,18 @@ Clawdbot's config schema is **strict**. Here are the gotchas we discovered:
   "models": {
     "providers": {
       "ollama": {
-        "baseUrl": "http://ollama:11434",
+        "baseUrl": "http://ollama:11434/v1",
+        "apiKey": "ollama-local",
+        "api": "openai-completions",
         "models": [
           {
             "id": "gemma3:12b",
             "name": "Gemma 3 12B",
-            "contextWindow": 8192,
-            "maxTokens": 4096
+            "reasoning": false,
+            "input": ["text"],
+            "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 },
+            "contextWindow": 32000,
+            "maxTokens": 8192
           }
         ]
       }
@@ -228,7 +233,6 @@ networks:
 | Tool | Status | Why |
 |------|--------|-----|
 | `read` | ✅ ALLOW | Read files in workspace |
-| `memory` | ✅ ALLOW | Remember facts across sessions |
 | `write` | ❌ DENY | File modification |
 | `edit` | ❌ DENY | File editing |
 | `apply_patch` | ❌ DENY | Code patching |
@@ -239,20 +243,123 @@ networks:
 | `web_fetch` | ❌ DENY | Fetch external content |
 | `elevated` | ❌ DENY | Host-level access |
 
+**Note:** `memory` tool was removed from allow list as it's a plugin that may not be enabled.
+
 ### Sandbox Configuration
 
-| Setting | Value | Purpose |
-|---------|-------|---------|
-| `mode` | `"all"` | Every session sandboxed |
-| `scope` | `"session"` | Per-session containers |
-| `workspaceAccess` | `"ro"` | Read-only workspace |
-| `network` | `"none"` | No network in sandbox |
-| `memory` | `"512m"` | Memory limit per sandbox |
-| `pidsLimit` | `100` | Process limit |
+Sandbox is **disabled** (`"mode": "off"`) because:
+- Clawdbot runs inside Docker
+- Docker-in-Docker requires privileged mode (security risk)
+- Tool deny list provides security instead
 
 ### Channels
 
 All messaging channels (WhatsApp, Telegram, Discord, etc.) are **disabled by omission**. Your SimpleX interface handles all user interaction through n8n.
+
+---
+
+## n8n Integration
+
+Clawdbot exposes an **OpenAI-compatible HTTP API** for easy integration with n8n.
+
+### HTTP Request Node Configuration
+
+| Setting | Value |
+|---------|-------|
+| Method | `POST` |
+| URL | `http://clawdbot-gateway:18789/v1/chat/completions` |
+| Authentication | Header Auth |
+| Header 1 | `Authorization: Bearer <CLAWDBOT_GATEWAY_TOKEN>` |
+| Header 2 | `x-clawdbot-agent-id: second-brain` |
+| Header 3 | `Content-Type: application/json` |
+
+### Request Body
+
+```json
+{
+  "model": "clawdbot",
+  "messages": [
+    {
+      "role": "user",
+      "content": "={{ $json.message }}"
+    }
+  ],
+  "user": "={{ $json.sender_id || $json.contactId || 'simplex-user' }}"
+}
+```
+
+The `user` field provides session persistence - same user ID = same conversation context.
+
+### Response Format
+
+```json
+{
+  "id": "chatcmpl_...",
+  "object": "chat.completion",
+  "model": "clawdbot",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "The response text here"
+      },
+      "finish_reason": "stop"
+    }
+  ]
+}
+```
+
+### Extract Response (Code Node)
+
+```javascript
+const response = $input.first().json;
+const content = response.choices?.[0]?.message?.content || "Sorry, I couldn't process that.";
+
+return [{
+  json: {
+    reply: content
+  }
+}];
+```
+
+---
+
+## Workspace Files (System Prompt)
+
+Clawdbot uses markdown files in the workspace for system prompts:
+
+### AGENTS.md
+
+```markdown
+# Second Brain Assistant
+
+You are a helpful AI assistant integrated into a personal Second Brain system.
+
+## Your Capabilities
+- Complex reasoning and analysis
+- Answering questions thoughtfully
+- Helping with planning and decision-making
+
+## Guidelines
+- Keep responses focused and helpful
+- Ask clarifying questions when needed
+- Be honest when you don't know something
+```
+
+### MEMORY.md
+
+```markdown
+# Memory
+
+## User Information
+- (Add remembered facts here)
+
+## Important Notes
+- (Important information goes here)
+```
+
+Location: `data/clawdbot/workspace/second-brain/`
 
 ---
 
@@ -279,15 +386,6 @@ git clone https://github.com/clawdbot/clawdbot.git ~/projects/clawdbot
 # Build (takes 5-10 minutes)
 cd ~/projects/clawdbot
 docker build -t clawdbot:local .
-
-# Also build sandbox image
-docker build -t clawdbot-sandbox:bookworm-slim - << 'EOF'
-FROM debian:bookworm-slim
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates curl && rm -rf /var/lib/apt/lists/*
-USER 1000:1000
-WORKDIR /workspace
-EOF
 ```
 
 ---
@@ -307,46 +405,38 @@ docker logs -f clawdbot-gateway
 # Status
 docker exec clawdbot-gateway node dist/index.js status
 
-# Security audit
-docker exec clawdbot-gateway node dist/index.js security audit --deep
-
 # Rebuild after source update
 cd ~/projects/clawdbot && git pull && docker build -t clawdbot:local .
 ```
 
 ---
 
-## Verifying Installation
+## Testing the API
 
 ```bash
-# Check container is running
-docker ps | grep clawdbot
+TOKEN=$(grep CLAWDBOT_GATEWAY_TOKEN ~/projects/second-brain/.env | cut -d= -f2)
 
-# Check gateway is responding
-docker exec clawdbot-gateway curl -s http://localhost:18789/__clawdbot__/canvas/ | head -5
-
-# Check status
-docker exec clawdbot-gateway node dist/index.js status
+docker exec clawdbot-gateway curl -sS http://localhost:18789/v1/chat/completions \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "x-clawdbot-agent-id: second-brain" \
+  -d '{
+    "model": "clawdbot",
+    "messages": [{"role":"user","content":"Hello!"}]
+  }'
 ```
 
-Expected status output:
+Expected response:
+```json
+{
+  "choices": [{
+    "message": {
+      "role": "assistant",
+      "content": "Hello! How can I help you today?"
+    }
+  }]
+}
 ```
-Gateway: local · ws://127.0.0.1:18789 · reachable · auth token
-Agents: 2 · default second-brain
-Memory: enabled (plugin memory-core)
-```
-
----
-
-## Connecting to n8n
-
-Clawdbot uses **WebSocket**, not REST API. To integrate with n8n:
-
-1. Use a WebSocket node to connect to `ws://clawdbot-gateway:18789`
-2. Authenticate with `CLAWDBOT_GATEWAY_TOKEN`
-3. Send messages in Clawdbot's protocol format
-
-(See separate n8n integration guide for detailed workflow setup)
 
 ---
 
@@ -354,14 +444,34 @@ Clawdbot uses **WebSocket**, not REST API. To integrate with n8n:
 
 ### Config Invalid Errors
 
-Check the [Configuration Schema](#configuration-schema-important) section. Common issues:
+Check the [Configuration Schema](#configuration-schema-important) section. Most common issues:
 - `cpus` as string instead of number
-- Invalid `bind` value
+- Invalid `bind` value (must be enum)
 - `tools` in wrong location
+- Missing `api` or `apiKey` in Ollama provider
+- `contextWindow` below 16000
 
 ### Out of Memory
 
 Don't set memory limits in docker-compose. Clawdbot needs 2GB+ RAM.
+
+### "Unhandled API in mapOptionsForApi: undefined"
+
+Missing `api` field in Ollama provider config. Add:
+```json
+"api": "openai-completions"
+```
+
+### "No API key found for provider ollama"
+
+Add dummy API key to Ollama provider:
+```json
+"apiKey": "ollama-local"
+```
+
+### "Model context window too small"
+
+Increase `contextWindow` to at least 16000 (we use 32000).
 
 ### Gateway Token Mismatch
 
@@ -370,25 +480,23 @@ Ensure `CLAWDBOT_GATEWAY_TOKEN` in `.env` matches what the container sees:
 docker exec clawdbot-gateway printenv | grep CLAWDBOT_GATEWAY_TOKEN
 ```
 
-### Network Issues
+### "spawn docker EACCES"
 
-Ensure all containers are on `second-brain-net`:
-```bash
-docker network inspect second-brain-net
-```
+Sandbox is trying to use Docker-in-Docker. Set `sandbox.mode: "off"`.
 
 ---
 
 ## Security Checklist
 
-- [ ] Config file permissions are 600
-- [ ] All messaging channels disabled (omitted from config)
-- [ ] Sandbox mode is "all"
-- [ ] Dangerous tools in deny list
-- [ ] elevated.enabled is false
-- [ ] No ports exposed to host (internal network only)
-- [ ] Gateway auth mode is "token"
-- [ ] controlUi is disabled
+- [x] Config file permissions are 600
+- [x] All messaging channels disabled (omitted from config)
+- [x] Sandbox mode is "off" (Docker-in-Docker not supported)
+- [x] Dangerous tools in deny list
+- [x] elevated.enabled is false
+- [x] No ports exposed to host (internal network only)
+- [x] Gateway auth mode is "token"
+- [x] controlUi is disabled
+- [x] HTTP API enabled for n8n only
 
 ---
 

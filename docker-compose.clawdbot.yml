@@ -2,6 +2,12 @@
 # Built from source: https://github.com/clawdbot/clawdbot
 #
 # Usage: docker compose -f docker-compose.yml -f docker-compose.ollama.yml -f docker-compose.clawdbot.yml up -d
+#
+# Key learnings applied:
+# - --bind must be "lan" not "0.0.0.0" (Clawdbot uses enum values)
+# - No memory limits - Clawdbot needs 2GB+ RAM or it OOMs
+# - Healthcheck uses /__clawdbot__/canvas/ (no /health endpoint exists)
+# - Network is defined in main compose, not external
 
 services:
   clawdbot-gateway:
