@@ -1,4 +1,4 @@
-version: '3.8'
+
 
 services:
   whisper:
@@ -18,7 +18,7 @@ services:
       # small:  244M params, ~2GB VRAM, better accuracy
       # medium: 769M params, ~5GB VRAM, high accuracy
       # large-v3: 1550M params, ~10GB VRAM, best accuracy
-      WHISPER_MODEL: base
+      WHISPER_MODEL: large-v3
       
       # Device: cuda (GPU) or cpu
       WHISPER_DEVICE: cuda

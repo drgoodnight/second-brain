@@ -1,10 +1,17 @@
 #!/usr/bin/env python3
 """
-SimpleX ↔ n8n Bridge v2.0
-Bidirectional bridge with media support, persistent connections, and comprehensive monitoring.
+SimpleX ↔ n8n Bridge v2.1 with Whisper Integration (FIXED)
+Bidirectional bridge with media support, persistent connections, and voice transcription.
+
+FIXES in v2.1:
+- Voice message file info is now correctly read from chatItem.file (not msgContent.voice)
+- Auto-accepts files via /fr command when fileStatus.type == "rcvInvitation"
+- Waits for file download completion before transcription
+- Polls for file status changes after accepting
 
 Features:
-- Voice, image, and file message support
+- Voice transcription via Whisper API
+- Image and file message support
 - Persistent WebSocket connection with auto-reconnect
 - Bidirectional messaging (SimpleX ↔ n8n)
 - HTTP endpoints for health checks, metrics, and message sending
@@ -25,6 +32,7 @@ import sys
 import hmac
 import hashlib
 import logging
+import mimetypes
 from logging.handlers import RotatingFileHandler
 from dataclasses import dataclass, field, asdict
 from typing import Dict, Optional, List, Any, Set
@@ -53,6 +61,7 @@ class BridgeConfig:
     """Bridge configuration loaded from environment variables"""
     ws_url: str
     webhook_url: str
+    whisper_api_url: str = ""
     state_file: str = "/app/scripts/state/simplex_last_seen.json"
     poll_seconds: float = 2.0
     ws_timeout: float = 10.0
@@ -72,6 +81,8 @@ class BridgeConfig:
     state_cleanup_max_contacts: int = 1000
     enable_metrics: bool = True
     enable_group_chat: bool = False
+    file_receive_timeout: float = 30.0  # NEW: timeout for file downloads
+    file_poll_interval: float = 1.0     # NEW: interval to check file status
     
     @classmethod
     def from_env(cls) -> 'BridgeConfig':
@@ -87,6 +98,7 @@ class BridgeConfig:
         return cls(
             ws_url=ws_url,
             webhook_url=webhook_url,
+            whisper_api_url=os.environ.get("WHISPER_API_URL", ""),
             state_file=os.environ.get("SIMPLEX_STATE_FILE", cls.state_file),
             poll_seconds=float(os.environ.get("SIMPLEX_POLL_SECONDS", "2")),
             ws_timeout=float(os.environ.get("SIMPLEX_WS_TIMEOUT", "10")),
@@ -103,6 +115,8 @@ class BridgeConfig:
             rate_limit_per_minute=int(os.environ.get("RATE_LIMIT_PER_MINUTE", "20")),
             enable_metrics=os.environ.get("ENABLE_METRICS", "1") == "1",
             enable_group_chat=os.environ.get("ENABLE_GROUP_CHAT", "0") == "1",
+            file_receive_timeout=float(os.environ.get("FILE_RECEIVE_TIMEOUT", "30")),
+            file_poll_interval=float(os.environ.get("FILE_POLL_INTERVAL", "1")),
         )
     
     def __post_init__(self):
@@ -124,6 +138,8 @@ metrics = None
 rate_limiter = None
 ws_connection: Optional[websocket.WebSocket] = None
 state: Dict[str, int] = {}
+# Track files we're currently waiting to download
+pending_files: Dict[int, Dict[str, Any]] = {}
 
 
 # ============================================================
@@ -173,6 +189,105 @@ def setup_logging(config: BridgeConfig) -> logging.Logger:
 
 
 # ============================================================
+# Whisper Integration
+# ============================================================
+
+def transcribe_voice_message(file_path: str, whisper_url: str, logger) -> Optional[str]:
+    """
+    Transcribe a voice message using Whisper API
+    
+    Args:
+        file_path: Path to the voice file from SimpleX
+        whisper_url: URL of the Whisper transcription API
+        logger: Logger instance
+    
+    Returns:
+        Transcribed text or None if transcription fails
+    """
+    if not whisper_url:
+        logger.debug("WHISPER_API_URL not configured, skipping transcription")
+        return None
+    
+    if not file_path or not os.path.exists(file_path):
+        logger.warning(f"Voice file not found: {file_path}")
+        return None
+    
+    try:
+        # Read the audio file
+        with open(file_path, 'rb') as f:
+            audio_data = f.read()
+        
+        # Determine content type
+        content_type, _ = mimetypes.guess_type(file_path)
+        if not content_type:
+            content_type = 'audio/ogg'  # SimpleX default
+        
+        # Create multipart form data
+        boundary = '----WebKitFormBoundary' + os.urandom(16).hex()
+        body = []
+        
+        # Add file field
+        body.append(f'--{boundary}'.encode())
+        body.append(f'Content-Disposition: form-data; name="file"; filename="{os.path.basename(file_path)}"'.encode())
+        body.append(f'Content-Type: {content_type}'.encode())
+        body.append(b'')
+        body.append(audio_data)
+        
+        # Add model field (required by Whisper API)
+        body.append(f'--{boundary}'.encode())
+        body.append(b'Content-Disposition: form-data; name="model"')
+        body.append(b'')
+        body.append(b'whisper-1')
+        
+        # Add response_format field
+        body.append(f'--{boundary}'.encode())
+        body.append(b'Content-Disposition: form-data; name="response_format"')
+        body.append(b'')
+        body.append(b'json')
+        
+        body.append(f'--{boundary}--'.encode())
+        body.append(b'')
+        
+        body_bytes = b'\r\n'.join(body)
+        
+        # Make request to Whisper
+        req = urllib.request.Request(
+            whisper_url,
+            data=body_bytes,
+            headers={
+                'Content-Type': f'multipart/form-data; boundary={boundary}',
+                'Content-Length': str(len(body_bytes))
+            },
+            method='POST'
+        )
+        
+        logger.info(f"🎤 Transcribing voice message: {file_path} ({len(audio_data)} bytes)")
+        
+        with urllib.request.urlopen(req, timeout=30) as response:
+            result = json.loads(response.read().decode('utf-8'))
+            transcription = result.get('text', '').strip()
+            
+            if transcription:
+                logger.info(f"✅ Transcribed ({len(transcription)} chars): {transcription[:100]}...")
+                return transcription
+            else:
+                logger.warning("Whisper returned empty transcription")
+                return None
+                
+    except urllib.error.HTTPError as e:
+        logger.error(f"Whisper API error {e.code}: {e.reason}")
+        try:
+            error_body = e.read().decode('utf-8')
+            logger.error(f"Error details: {error_body}")
+        except:
+            pass
+        return None
+    except Exception as e:
+        logger.error(f"Voice transcription failed: {e}")
+        return None
+
+
+# ============================================================
 # Metrics
 # ============================================================
 
@@ -188,6 +303,11 @@ class BridgeMetrics:
     reconnections: int = 0
     rate_limited: int = 0
     state_saves: int = 0
+    voice_transcriptions: int = 0
+    transcription_failures: int = 0
+    files_accepted: int = 0      # NEW
+    files_downloaded: int = 0    # NEW
+    file_timeouts: int = 0       # NEW
     last_message_time: float = 0
     message_types: Dict[str, int] = field(default_factory=lambda: defaultdict(int))
     
@@ -213,6 +333,11 @@ class BridgeMetrics:
             "reconnections": self.reconnections,
             "rate_limited": self.rate_limited,
             "state_saves": self.state_saves,
+            "voice_transcriptions": self.voice_transcriptions,
+            "transcription_failures": self.transcription_failures,
+            "files_accepted": self.files_accepted,
+            "files_downloaded": self.files_downloaded,
+            "file_timeouts": self.file_timeouts,
             "last_message_time": self.last_message_time,
             "seconds_since_last_message": time.time() - self.last_message_time if self.last_message_time > 0 else 0,
             "messages_per_minute": (self.messages_received / uptime * 60) if uptime > 0 else 0,
@@ -410,11 +535,116 @@ def ws_cmd(ws: websocket.WebSocket, corr_id: str, command: str, timeout: Optiona
 
 
 # ============================================================
-# Message Extraction & Normalization
+# File Reception (NEW)
 # ============================================================
 
-def extract_direct_message(ci: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-    """Extract direct message"""
+def accept_file(ws: websocket.WebSocket, file_id: int) -> bool:
+    """
+    Accept a file transfer by sending /fr command
+    
+    Args:
+        ws: WebSocket connection
+        file_id: SimpleX file ID to accept
+    
+    Returns:
+        True if accept command was sent successfully
+    """
+    try:
+        corr_id = f"fr-{file_id}-{int(time.time() * 1000)}"
+        cmd = f"/fr {file_id}"
+        
+        logger.info(f"📥 Accepting file {file_id}...")
+        resp = ws_cmd(ws, corr_id, cmd, timeout=config.ws_timeout)
+        
+        # Check response for errors
+        resp_data = resp.get("resp", {})
+        if resp_data.get("type") == "chatCmdError":
+            error = resp_data.get("chatError", {})
+            logger.error(f"Failed to accept file {file_id}: {error}")
+            return False
+        
+        logger.info(f"✅ File {file_id} acceptance initiated")
+        metrics.increment("files_accepted")
+        return True
+        
+    except Exception as e:
+        logger.error(f"Error accepting file {file_id}: {e}")
+        return False
+
+
+def get_file_status(ws: websocket.WebSocket, file_id: int) -> Optional[Dict[str, Any]]:
+    """
+    Get current status of a file transfer
+    
+    Args:
+        ws: WebSocket connection
+        file_id: SimpleX file ID
+    
+    Returns:
+        File status dict or None if not found
+    """
+    try:
+        corr_id = f"fs-{file_id}-{int(time.time() * 1000)}"
+        cmd = f"/fstatus {file_id}"
+        
+        resp = ws_cmd(ws, corr_id, cmd, timeout=config.ws_timeout)
+        return resp.get("resp", {})
+        
+    except Exception as e:
+        logger.debug(f"Error getting file status {file_id}: {e}")
+        return None
+
+
+def wait_for_file_download(ws: websocket.WebSocket, file_id: int, file_name: str) -> Optional[str]:
+    """
+    Wait for a file to finish downloading
+    
+    Args:
+        ws: WebSocket connection
+        file_id: SimpleX file ID
+        file_name: Expected filename
+    
+    Returns:
+        File path if download completed, None otherwise
+    """
+    start_time = time.time()
+    
+    while time.time() - start_time < config.file_receive_timeout:
+        # Check /tmp first (default SimpleX download location)
+        possible_paths = [
+            f"/tmp/{file_name}",
+            f"/home/simplex/.simplex/files/{file_name}",
+        ]
+        
+        for path in possible_paths:
+            if os.path.exists(path):
+                # Verify file is complete (size > 0 and not growing)
+                size1 = os.path.getsize(path)
+                time.sleep(0.2)
+                size2 = os.path.getsize(path)
+                
+                if size1 > 0 and size1 == size2:
+                    logger.info(f"✅ File downloaded: {path} ({size1} bytes)")
+                    metrics.increment("files_downloaded")
+                    return path
+        
+        time.sleep(config.file_poll_interval)
+    
+    logger.warning(f"⏱️ Timeout waiting for file {file_id} ({file_name})")
+    metrics.increment("file_timeouts")
+    return None
+
+
+# ============================================================
+# Message Extraction & Normalization (UPDATED)
+# ============================================================
+
+def extract_direct_message(ci: Dict[str, Any], ws: websocket.WebSocket = None) -> Optional[Dict[str, Any]]:
+    """
+    Extract direct message with proper file handling
+    
+    FIXED: Now correctly reads file info from chatItem.file instead of msgContent.voice
+    """
     chatInfo = ci.get("chatInfo") or {}
     contact = chatInfo.get("contact") or {}
     contact_id = contact.get("contactId")
@@ -431,6 +661,9 @@ def extract_direct_message(ci: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     
     content = chatItem.get("content") or {}
     msg_content = content.get("msgContent") or {}
+    
+    # FIXED: Get file info from chatItem level, not inside msgContent
+    file_info = chatItem.get("file") or {}
     
     # Only process received messages
     if chat_dir_type != "directRcv":
@@ -457,32 +690,77 @@ def extract_direct_message(ci: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     
     # Handle different message types
     if msg_type == "voice":
-        voice = msg_content.get("voice") or {}
+        # FIXED: Get file details from chatItem.file
+        file_id = file_info.get("fileId")
+        file_name = file_info.get("fileName")
+        file_size = file_info.get("fileSize")
+        file_status = file_info.get("fileStatus", {})
+        file_status_type = file_status.get("type", "")
+        file_path = file_status.get("filePath")  # Only present when downloaded
+        
+        duration = msg_content.get("duration", 0)
+        
+        logger.debug(f"Voice message: fileId={file_id}, fileName={file_name}, "
+                    f"status={file_status_type}, filePath={file_path}")
+        
+        # If file needs to be accepted and we have a WebSocket connection
+        if file_status_type == "rcvInvitation" and file_id and ws:
+            logger.info(f"🎤 Voice message needs file acceptance (fileId={file_id})")
+            
+            # Accept the file
+            if accept_file(ws, file_id):
+                # Wait for download to complete
+                file_path = wait_for_file_download(ws, file_id, file_name)
+        
+        # Try to transcribe if we have a file path
+        transcription = None
+        if file_path and config.whisper_api_url:
+            logger.info(f"🎤 Attempting to transcribe: {file_path}")
+            transcription = transcribe_voice_message(file_path, config.whisper_api_url, logger)
+            if transcription:
+                metrics.increment("voice_transcriptions")
+            else:
+                metrics.increment("transcription_failures")
+        elif not file_path:
+            logger.warning(f"Cannot transcribe: file not downloaded (status={file_status_type})")
+        elif not config.whisper_api_url:
+            logger.debug("Whisper not configured, skipping transcription")
+        
         return {
             **base_msg,
             "type": "voice",
-            "text": text or "[Voice message]",
-            "filePath": voice.get("filePath"),
-            "duration": voice.get("duration"),
+            "text": transcription or text or "[Voice message - transcription unavailable]",
+            "filePath": file_path,
+            "fileId": file_id,
+            "fileName": file_name,
+            "fileSize": file_size,
+            "duration": duration,
+            "transcribed": bool(transcription),
         }
+    
     elif msg_type == "image":
-        image = msg_content.get("image") or {}
+        file_path = file_info.get("fileStatus", {}).get("filePath")
         return {
             **base_msg,
             "type": "image",
             "text": text or "[Image]",
-            "filePath": image.get("filePath"),
+            "filePath": file_path,
+            "fileId": file_info.get("fileId"),
+            "fileName": file_info.get("fileName"),
         }
+    
     elif msg_type == "file":
-        file_info = msg_content.get("file") or {}
+        file_path = file_info.get("fileStatus", {}).get("filePath")
         return {
             **base_msg,
             "type": "file",
             "text": text or f"[File: {file_info.get('fileName', 'unknown')}]",
-            "filePath": file_info.get("filePath"),
+            "filePath": file_path,
+            "fileId": file_info.get("fileId"),
             "fileName": file_info.get("fileName"),
             "fileSize": file_info.get("fileSize"),
         }
+    
     else:
         # Text message
         if not text:
@@ -549,13 +827,13 @@ def extract_group_message(ci: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     }
 
 
-def extract_message(ci: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+def extract_message(ci: Dict[str, Any], ws: websocket.WebSocket = None) -> Optional[Dict[str, Any]]:
     """Extract and normalize a message from chat item"""
     chatInfo = ci.get("chatInfo") or {}
     chat_type = chatInfo.get("type")
     
     if chat_type == "direct":
-        return extract_direct_message(ci)
+        return extract_direct_message(ci, ws)
     elif chat_type == "group":
         return extract_group_message(ci)
     else:
@@ -658,15 +936,22 @@ def build_webhook_payload(msg: Dict[str, Any]) -> Dict[str, Any]:
     if msg.get("type") == "voice":
         payload["voice"] = {
             "filePath": msg.get("filePath"),
+            "fileId": msg.get("fileId"),
+            "fileName": msg.get("fileName"),
+            "fileSize": msg.get("fileSize"),
             "duration": msg.get("duration"),
+            "transcribed": msg.get("transcribed", False),
         }
     elif msg.get("type") == "image":
         payload["image"] = {
             "filePath": msg.get("filePath"),
+            "fileId": msg.get("fileId"),
+            "fileName": msg.get("fileName"),
         }
     elif msg.get("type") == "file":
         payload["file"] = {
             "filePath": msg.get("filePath"),
+            "fileId": msg.get("fileId"),
             "fileName": msg.get("fileName"),
             "fileSize": msg.get("fileSize"),
         }
@@ -737,10 +1022,10 @@ def fetch_and_process_messages(ws: websocket.WebSocket, state: Dict[str, int]) -
         logger.debug("No chat items in /tail response")
         return 0
     
-    # Extract messages
+    # Extract messages (pass ws for file acceptance)
     messages = []
     for ci in chat_items:
-        msg = extract_message(ci)
+        msg = extract_message(ci, ws)  # UPDATED: pass ws connection
         if msg:
             messages.append(msg)
             metrics.increment("messages_received")
@@ -830,6 +1115,8 @@ class BridgeHTTPHandler(BaseHTTPRequestHandler):
             "status": "healthy" if running else "stopped",
             "ws_connected": ws_connection is not None,
             "state_contacts": len(state),
+            "whisper_configured": bool(config.whisper_api_url),
+            "version": "2.1",  # UPDATED version
         }
         
         self.send_response(200)
@@ -918,6 +1205,7 @@ def start_http_server():
     try:
         server = HTTPServer((config.http_bind, config.http_port), BridgeHTTPHandler)
         logger.info(f"✅ HTTP server listening on {config.http_bind}:{config.http_port}")
+        logger.info(f"------------------------------------------------------------")
         logger.info(f"   - GET  /health  - Health check")
         logger.info(f"   - GET  /metrics - Metrics")
         logger.info(f"   - GET  /state   - State info")
@@ -956,11 +1244,27 @@ def check_n8n_reachable() -> tuple[bool, str]:
         return False, str(e)
 
 
+def check_whisper_reachable() -> tuple[bool, str]:
+    """Verify Whisper is reachable"""
+    if not config.whisper_api_url:
+        return True, "Not configured (optional)"
+    
+    try:
+        parsed = urlparse(config.whisper_api_url)
+        host = parsed.hostname
+        port = parsed.port or (443 if parsed.scheme == "https" else 80)
+        sock = socket.create_connection((host, port), timeout=5)
+        sock.close()
+        return True, "OK"
+    except Exception as e:
+        return False, str(e)
+
+
 def run_health_checks():
     """Run startup health checks"""
-    logger.info("=" * 60)
+    logger.info("============================================================")
     logger.info("Running startup health checks...")
-    logger.info("=" * 60)
+    logger.info("============================================================")
     
     all_ok = True
     
@@ -976,7 +1280,13 @@ def run_health_checks():
     if not n8n_ok:
         all_ok = False
     
-    logger.info("=" * 60)
+    whisper_ok, whisper_msg = check_whisper_reachable()
+    status = "✓" if whisper_ok else "✗"
+    logger.info(f"  {status} Whisper ({config.whisper_api_url or 'not configured'}): {whisper_msg}")
+    if not whisper_ok and config.whisper_api_url:
+        logger.warning("    Voice transcription will not work!")
+    
+    logger.info("============================================================")
     
     if all_ok:
         logger.info("✅ All health checks passed!")
@@ -984,7 +1294,7 @@ def run_health_checks():
         logger.warning("⚠️  Some health checks failed!")
         logger.warning("The bridge will still start, but may not work correctly.")
     
-    logger.info("=" * 60)
+    logger.info("============================================================")
 
 
 # ============================================================
@@ -1023,19 +1333,22 @@ def main():
     # Print banner
     logger.info("")
     logger.info("╔════════════════════════════════════════════════════════════╗")
-    logger.info("║       SimpleX ↔ n8n Bridge v2.0 Starting                  ║")
+    logger.info("║   SimpleX ↔ n8n Bridge v2.1 with Voice Auto-Accept       ║")
     logger.info("╚════════════════════════════════════════════════════════════╝")
     logger.info("")
     logger.info("Configuration:")
     logger.info(f"  SIMPLEX_WS_URL:      {config.ws_url}")
     logger.info(f"  N8N_WEBHOOK_URL:     {config.webhook_url}")
+    logger.info(f"  WHISPER_API_URL:     {config.whisper_api_url or '(not configured)'}")
     logger.info(f"  STATE_FILE:          {config.state_file}")
     logger.info(f"  POLL_SECONDS:        {config.poll_seconds}")
     logger.info(f"  HTTP_PORT:           {config.http_port}")
     logger.info(f"  LOG_LEVEL:           {config.log_level}")
     logger.info(f"  RATE_LIMIT:          {config.rate_limit_per_minute}/min")
+    logger.info(f"  FILE_TIMEOUT:        {config.file_receive_timeout}s")
     logger.info(f"  WEBHOOK_AUTH:        {'Enabled' if config.webhook_secret else 'Disabled'}")
     logger.info(f"  GROUP_CHAT:          {'Enabled' if config.enable_group_chat else 'Disabled'}")
+    logger.info(f"  VOICE_TRANSCRIPTION: {'Enabled' if config.whisper_api_url else 'Disabled'}")
     logger.info("")
     
     # Initialize globals

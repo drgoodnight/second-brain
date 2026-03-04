@@ -71,62 +71,56 @@ services:
       - TZ=${TZ:-Europe/London}
     volumes:
       - ./data/simplex:/home/simplex/.simplex
+      - simplex-tmp:/tmp
     networks:
       - second-brain-net
 
   # ============================================                                                                                                                                     
-  # SIMPLEX BRIDGE - SimpleX → n8n Connector (v2)                                                                                                                                    
+  # SIMPLEX BRIDGE - SimpleX → n8n Connector (v2.1)                                                                                                                                    
   # ============================================ 
-                                                                                                                                      
   simplex-bridge:                                                                                                                                                                    
     build:                                                                                                                                                                           
       context: ./simplex-bridge-v2                                                                                                                                                   
       dockerfile: Dockerfile                                                                                                                                                         
     container_name: simplex-bridge                                                                                                                                                   
     restart: unless-stopped                                                                                                                                                          
-    environment:                                                                                                                                                                     
-        # SimpleX WebSocket connection                                                                                                                                                 
-         - SIMPLEX_WS_URL=ws://simplex-chat-cli:5225                                                                                                                                    
-                                                                                                                                                                                        
-         # n8n webhook for incoming messages                                                                                                                                            
-         - N8N_WEBHOOK_URL=http://n8n:5678/webhook/simplex-in                                                                                                                           
-                                                                                                                                                                                        
-         # Whisper API for voice transcription                                                                                                                                          
-         - WHISPER_API_URL=http://whisper-local:8000/v1/audio/transcriptions                                                                                                            
-                                                                                                                                                                                        
-         # State file for message deduplication                                                                                                                                         
-         - STATE_FILE=/app/state/bridge_state.json                                                                                                                                      
-                                                                                                                                                                                        
-         # Logging                                                                                                                                                                      
-         - LOG_LEVEL=INFO                                                                                                                                                               
-         - LOG_FILE=/app/logs/bridge.log                                                                                                                                                
-                                                                                                                                                                                        
-         # Optional: Webhook authentication                                                                                                                                             
-         - WEBHOOK_SECRET=${SIMPLEX_WEBHOOK_SECRET:-}                                                                                                                                   
-                                                                                                                                                                                        
-         - TZ=${TZ:-Europe/London}                                                                                                                                                      
-                                                                                                                                                                                        
-    volumes:                                                                                                                                                                         
-         - ./data/simplex-bridge:/app/state                                                                                                                                             
-         - ./data/simplex-bridge/logs:/app/logs                                                                                                                                         
-                                                                                                                                                                                        
-    depends_on:                                                                                                                                                                      
-         n8n:                                                                                                                                                                           
-           condition: service_healthy                                                                                                                                                   
-         simplex-chat-cli:                                                                                                                                                              
-           condition: service_started                                                                                                                                                   
-         whisper:                                                                                                                                                                       
-           condition: service_started                                                                                                                                                   
-                                                                                                                                                                                        
-    networks:                                                                                                                                                                        
-         - second-brain-net                                                                                                                                                             
-                                                                                                                                                                                        
-    healthcheck:                                                                                                                                                                     
-         test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health', timeout=5)"]                                                     
-         interval: 30s                                                                                                                                                                  
-         timeout: 10s                                                                                                                                                                   
-         retries: 3                                                                                                                                                                     
-         start_period: 10s     
+    environment:
+      # SimpleX WebSocket connection
+      - SIMPLEX_WS_URL=ws://simplex-chat-cli:5225
+      # n8n webhook for incoming messages
+      - N8N_WEBHOOK_URL=http://n8n:5678/webhook/simplex-in
+      # Whisper API for voice transcription
+      - WHISPER_API_URL=http://whisper-local:8000/v1/audio/transcriptions
+      # State file for message deduplication
+      - STATE_FILE=/app/state/bridge_state.json
+      # Logging
+      - LOG_LEVEL=DEBUG
+      - LOG_FILE=/app/logs/bridge.log
+      # Optional: Webhook authentication
+      - WEBHOOK_SECRET=${SIMPLEX_WEBHOOK_SECRET:-}
+      # Timezone
+      - TZ=${TZ:-Europe/London}
+    volumes:
+      - ./data/simplex-bridge:/app/state
+      - ./data/simplex-bridge/logs:/app/logs
+      - ./data/simplex:/home/simplex/.simplex:ro
+      - simplex-tmp:/tmp:ro
+    depends_on:
+      n8n:
+        condition: service_healthy
+      simplex-chat-cli:
+        condition: service_started
+      whisper:
+        condition: service_started
+    networks:
+      - second-brain-net
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
   # ============================================
   # NEXTCLOUD - Calendar (CalDAV)
   # ============================================
@@ -210,7 +204,6 @@ services:
       timeout: 10s
       retries: 3
 
-
   # ============================================
   # CADDY - HTTPS Reverse Proxy for iOS CalDAV
   # ============================================
@@ -231,38 +224,44 @@ services:
   # ============================================                                                                                                                                     
   # WHISPER - Local Speech-to-Text                                                                                                                                                   
   # ============================================                                                                                                                                     
-  whisper:                                                                                                                                                                           
-      build:                                                                                                                                                                           
-         context: ./whisper-local                                                                                                                                                       
-         dockerfile: Dockerfile                                                                                                                                                         
-      container_name: whisper-local                                                                                                                                                    
-      restart: unless-stopped                                                                                                                                                          
-      ports:                                                                                                                                                                           
-         - "${WHISPER_PORT:-8766}:8000"                                                                                                                                                 
-      environment:                                                                                                                                                                     
-         - WHISPER_MODEL=${WHISPER_MODEL:-base}                                                                                                                                         
-         - WHISPER_DEVICE=cuda                                                                                                                                                          
-         - WHISPER_COMPUTE_TYPE=float16                                                                                                                                                 
-         - WHISPER_MODEL_DIR=/app/models                                                                                                                                                
-         - TZ=${TZ:-Europe/London}                                                                                                                                                      
-      volumes:                                                                                                                                                                         
-         - ./data/whisper-models:/app/models                                                                                                                                            
-      deploy:                                                                                                                                                                          
-         resources:                                                                                                                                                                     
-           reservations:                                                                                                                                                                
-             devices:                                                                                                                                                                   
-               - driver: nvidia                                                                                                                                                         
-                 count: 1                                                                                                                                                               
-                 capabilities: [gpu]                                                                                                                                                    
-      networks:                                                                                                                                                                        
-        - second-brain-net                                                                                                                                                             
-      healthcheck:                                                                                                                                                                     
-        test: ["CMD", "curl", "-f", "http://localhost:8000/health"]                                                                                                                    
-        interval: 30s                                                                                                                                                                  
-        timeout: 10s                                                                                                                                                                   
-        retries: 3                                                                                                                                                                     
-        start_period: 60s        
+  whisper:
+    build:
+      context: ./whisper-local
+      dockerfile: Dockerfile
+    container_name: whisper-local
+    restart: unless-stopped
+    ports:
+      - "${WHISPER_PORT:-8766}:8000"
+    environment:
+      - WHISPER_MODEL=${WHISPER_MODEL:-large-v3}
+      - WHISPER_DEVICE=cuda
+      - WHISPER_COMPUTE_TYPE=float16
+      - WHISPER_MODEL_DIR=/app/models
+      - TZ=${TZ:-Europe/London}
+    volumes:
+      - ./data/whisper-models:/app/models
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    networks:
+      - second-brain-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
 
+# ============================================
+# VOLUMES
+# ============================================
+volumes:
+  simplex-tmp:
+    name: simplex-tmp
 
 # ============================================
 # NETWORK

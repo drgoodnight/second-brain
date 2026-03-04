@@ -47,11 +47,17 @@ if [ -f "${SIMPLEX_DB_PREFIX}_chat.db" ]; then
     # Trap to clean up socat on exit
     trap "kill $SOCAT_PID 2>/dev/null" EXIT
     
+    #Create the files folder to receive the voice messages
+
+    mkdir -p "$SIMPLEX_DATA_DIR/files"
+
     # Start simplex-chat (it will bind to localhost:INTERNAL_PORT)
     exec /usr/local/bin/simplex-chat \
         -p "$INTERNAL_PORT" \
         -d "$SIMPLEX_DB_PREFIX" \
-        --log-level "$SIMPLEX_LOG_LEVEL"
+        --log-level "$SIMPLEX_LOG_LEVEL" \
+        #--files-folder "$SIMPLEX_DATA_DIR/files" \
+        -f 
 else
     echo ""
     echo "╔════════════════════════════════════════════════════════════╗"
