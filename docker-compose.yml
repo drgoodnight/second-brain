@@ -92,7 +92,7 @@ services:
       # Whisper API for voice transcription
       - WHISPER_API_URL=http://whisper-local:8000/v1/audio/transcriptions
       # State file for message deduplication
-      - STATE_FILE=/app/state/bridge_state.json
+      - SIMPLEX_STATE_FILE=/app/state/bridge_state.json
       # Logging
       - LOG_LEVEL=DEBUG
       - LOG_FILE=/app/logs/bridge.log
