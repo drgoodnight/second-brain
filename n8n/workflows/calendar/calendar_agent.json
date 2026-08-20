@@ -3,32 +3,6 @@
   "nodes": [
     {
       "parameters": {
-        "model": {
-          "__rl": true,
-          "value": "gpt-5.1-chat-latest",
-          "mode": "list",
-          "cachedResultName": "gpt-5.1-chat-latest"
-        },
-        "builtInTools": {},
-        "options": {}
-      },
-      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
-      "typeVersion": 1.3,
-      "position": [
-        112,
-        16
-      ],
-      "id": "8fcd2d1f-6bd9-43f5-a967-54716d5133d0",
-      "name": "OpenAI Chat Model",
-      "credentials": {
-        "openAiApi": {
-          "id": "tid0jWJO9PFqH8sU",
-          "name": "OpenAi account 2"
-        }
-      }
-    },
-    {
-      "parameters": {
         "method": "PUT",
         "url": "={{ 'http://nextcloud/remote.php/dav/calendars/cypherdoc/work/' + encodeURIComponent($json.uid) + '.ics' }}",
         "authentication": "genericCredentialType",
@@ -51,34 +25,17 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.3,
       "position": [
-        608,
-        -208
+        800,
+        0
       ],
-      "id": "96d3fb9a-cdd7-4d90-aaa5-e4f6e71b32dc",
+      "id": "56286204-d08b-4707-ae67-70c1ac649704",
       "name": "CalDAV_PUT",
       "credentials": {
         "httpBasicAuth": {
-          "id": "2PJySY1nSlqMkMxp",
-          "name": "nextcloud_local"
+          "id": "3J7PuDtrV5vizZsi",
+          "name": "Unnamed credential"
         }
       }
-    },
-    {
-      "parameters": {
-        "promptType": "define",
-        "text": "=JSON:\n{{ JSON.stringify($json) }}\n",
-        "options": {
-          "systemMessage": "=You are an automation agent that generates RFC 5545 iCalendar (ICS) text.\n\nOUTPUT RULES (ABSOLUTE)\n\nOutput ONLY raw ICS text.\n\nNo markdown. No explanations.\n\nOutput must start with:\n\nBEGIN:VCALENDAR\n\n\nOutput must end with:\n\nEND:VCALENDAR\n\n\nInclude one or more VEVENT blocks (one per event).\n\nNever output empty properties.\n\nUse real line breaks between ICS lines.\n\nDo NOT output literal \\n except inside DESCRIPTION values.\n\nCALENDAR WRAPPER (ALWAYS)\nBEGIN:VCALENDAR\nVERSION:2.0\nPRODID:-//n8n AI//Rota2Cal//EN\nCALSCALE:GREGORIAN\n...VEVENTS...\nEND:VCALENDAR\n\nEXECUTION MODES (CRITICAL)\nMODE 1 — STRUCTURED EVENT MODE (preferred)\n\nIf an event object is present in the input:\n\nCreate exactly ONE VEVENT\n\nDo NOT infer or split further events\n\nDo NOT use free-text inference\n\nUse the following mapping:\n\nUID\n\nUse:\n\nevent.row_id@rota2cal\n\n\nIf row_id is missing, fall back to deterministic UID rules below\n\nDTSTART / DTEND\n\nUse event.start / event.end if provided\n\nIf times are missing:\n\nCreate an all-day event\n\nDTSTART = event.date at 00:00\n\nDTEND = next day at 00:00\n\nSUMMARY\n\nUse event.summary\n\nDESCRIPTION\n\nUse event.description\n\nAppend any extra contextual details if available\n\nLOCATION\n\nUse event.location if provided\n\nElse use default_location if provided\n\nCATEGORIES\n\nUse event.categories if provided\n\nMODE 2 — MANUAL / FREE-TEXT MODE\n\nIf no event object exists:\n\nUse request (text) and today to infer one or more events\n\nApply rota-aware inference rules below\n\nMultiple VEVENTs may be produced\n\nCRITICAL: You MUST always produce at least one VEVENT if the user is requesting to add an event. Never output an empty calendar wrapper.\n\nEVENT REQUIREMENTS (per VEVENT)\nRequired\n\nUID\n\nDTSTAMP\n\nDTSTART\n\nDTEND\n\nSUMMARY\n\nDESCRIPTION\n\nOptional (only if provided)\n\nLOCATION\n\nCATEGORIES\n\nTIME FORMAT (CRITICAL - EUROPE/LONDON TIMEZONE)\n\nAll times are in Europe/London timezone. You MUST use the TZID parameter.\n\nFormat for DTSTART and DTEND:\nDTSTART;TZID=Europe/London:YYYYMMDDTHHMMSS\nDTEND;TZID=Europe/London:YYYYMMDDTHHMMSS\n\nFormat for DTSTAMP (use UTC with Z suffix):\nDTSTAMP:YYYYMMDDTHHMMSSZ\n\nIf seconds unknown, use 00 for seconds.\n\nIf an event crosses midnight, DTEND must be on the next date.\n\nEXAMPLE VEVENT:\nBEGIN:VEVENT\nUID:20260115-1100-1200-team-meeting@rota2cal\nDTSTAMP:20260115T105600Z\nDTSTART;TZID=Europe/London:20260115T110000\nDTEND;TZID=Europe/London:20260115T120000\nSUMMARY:Team meeting\nDESCRIPTION:Added via SimpleX\nEND:VEVENT\n\nDo NOT use floating time (bare YYYYMMDDTHHMMSS without TZID).\nDo NOT use UTC (Z suffix) for DTSTART or DTEND.\nALWAYS use TZID=Europe/London for DTSTART and DTEND.\n\nESCAPING (RFC 5545)\n\nNew lines inside DESCRIPTION → \\n\n\nCommas → \\,\n\nSemicolons → \\;\n\nBackslashes → \\\\\n\nLINE LENGTH (BEST EFFORT)\n\nKeep lines ≤ 75 characters where practical\n\nDo NOT wrap if it risks correctness\n\nIDEMPOTENT UID (IMPORTANT)\n\nUID must be stable across re-runs.\n\nPreferred (structured mode)\nUID:<event.row_id>@rota2cal\n\nFallback (manual inference)\n\nBuild UID from:\n\nevent_date (YYYYMMDD)\n\nstart_time (HHMM)\n\nend_time (HHMM)\n\nnormalized summary\n\nNormalization:\n\nlowercase\n\nspaces → hyphens\n\nremove all characters except a-z, 0-9, hyphen\n\nExample:\n\nUID:20260110-0800-2030-icu-day-shift@rota2cal\n\nDTSTAMP\n\nIf input contains now, use it (convert to UTC and add Z suffix)\n\nOtherwise use fixed placeholder:\n\n20260108T000000Z\n\nINPUT YOU WILL RECEIVE\n\nYou will receive either:\n\nA) Structured JSON (trusted)\n{\n  \"now\": \"YYYYMMDDTHHMMSS\",\n  \"default_location\": \"string optional\",\n  \"event\": {\n    \"row_id\": \"string optional\",\n    \"date\": \"YYYY-MM-DD\",\n    \"start\": \"HH:MM optional\",\n    \"end\": \"HH:MM optional\",\n    \"type\": \"day|night|oncall|am_list|pm_list|elective_day|other optional\",\n    \"summary\": \"string optional\",\n    \"description\": \"string optional\",\n    \"location\": \"string optional\",\n    \"categories\": [\"string\", \"...\"] optional\n  }\n}\n\nB) Free-text request\n\nNatural language describing shifts or calendar events\n\nThe input will include the current local time in Europe/London timezone in the format:\n[Current local time: HH:MM, Date: YYYY-MM-DD]\n\nUse this to interpret relative times like \"now\", \"in 2 hours\", \"this afternoon\", etc.\n\nIf JSON is present, trust it fully.\nIf only text is present, infer events.\n\nTIME INFERENCE RULES (MANUAL MODE)\n\n1. If explicit START and END times given (e.g. \"2pm-4pm\", \"14:00-16:00\"), use them exactly.\n\n2. If only START time given with NO end time (e.g. \"at 3pm\", \"landing at 7:20\"):\n   - Create a ZERO-DURATION event (point in time)\n   - DTEND = DTSTART (same time)\n   - This is correct for arrivals, deadlines, reminders, etc.\n\n3. If rota type detected, use these defaults:\n   - day → 08:00 → 20:30\n   - night → 20:00 → 08:30 next day\n   - oncall → 08:00 → 08:00 next day\n   - am_list → 08:00 → 13:00\n   - pm_list → 13:00 → 17:30\n   - elective_day → 08:00 → 17:30\n\n4. GENERIC EVENT DEFAULT (no time at all):\n   If NO time is specified AND event type is not a known rota type:\n   - Default to a 1-hour event\n   - DTSTART = 09:00 on the specified date\n   - DTEND = 10:00 on the specified date\n   - This ensures events like \"add meeting on Friday\" or \"add lunch on 25th\" always get created\n\n5. All-day events:\n   If user explicitly says \"all day\" or \"whole day\":\n   - Use VALUE=DATE format\n   - DTSTART;VALUE=DATE:YYYYMMDD\n   - DTEND;VALUE=DATE:YYYYMMDD (next day)\n\nDURATION EXAMPLES:\n- \"meeting 2pm-4pm\" → DTSTART 14:00, DTEND 16:00 (2 hours)\n- \"Popey landing at 7:20\" → DTSTART 07:20, DTEND 07:20 (zero duration)\n- \"call at 3pm\" → DTSTART 15:00, DTEND 15:00 (zero duration)\n- \"lunch tomorrow\" → DTSTART 09:00, DTEND 10:00 (default 1 hour, no time given)\n- \"day shift\" → DTSTART 08:00, DTEND 20:30 (rota default)\n\nSUMMARY RULES\n\nPrefer explicit summary from user input\n\nElse map type to:\n\nday → Day shift\n\nnight → Night shift\n\noncall → Second on-call\n\nam_list → AM list\n\npm_list → PM list\n\nelective_day → Elective day\n\nFor generic events, use the text the user provided (e.g. \"multiple\", \"meeting\", \"lunch\")\n\nAppend specialty/location if detectable (e.g. \"Day shift (ICU)\")\n\nDESCRIPTION RULES\n\nInclude source context if available (e.g. spreadsheet, row ID)\n\nKeep concise\n\nUse \\n for multi-line content\n\nDefault: \"Added via SimpleX\"\n\nDUPLICATES\n\nIf two inferred events share identical date + start + end + summary:\n\nOutput only one\n\nFAIL-SAFE\n\nONLY output an empty calendar if the input contains NO discernible event request at all (e.g. just \"hello\" or gibberish).\n\nIf ANY event details can be extracted (date, summary, anything), ALWAYS create a VEVENT with sensible defaults.\n\nBEGIN:VCALENDAR\nVERSION:2.0\nPRODID:-//n8n AI//Rota2Cal//EN\nCALSCALE:GREGORIAN\nEND:VCALENDAR"
-        }
-      },
-      "type": "@n8n/n8n-nodes-langchain.agent",
-      "typeVersion": 3.1,
-      "position": [
-        32,
-        -208
-      ],
-      "id": "0c48834e-af56-4e2b-8f73-f893ce4c65de",
-      "name": "AI Agent_ICS_generator"
     },
     {
       "parameters": {
@@ -87,23 +44,23 @@
       "type": "n8n-nodes-base.executeWorkflowTrigger",
       "typeVersion": 1.1,
       "position": [
-        -192,
-        -208
+        0,
+        0
       ],
-      "id": "711b4a50-2964-4ef8-b237-aac149d155f0",
+      "id": "3504807e-8776-4f26-940a-8357580e38e4",
       "name": "When Executed by Another Workflow"
     },
     {
       "parameters": {
-        "jsCode": "// Split_ICS_Events - Code node (Run Once for All Items)\nconst items = $input.all();\nconst results = [];\n\n// Helper to format date nicely\nfunction formatDate(dateStr) {\n  const year = dateStr.substr(0, 4);\n  const month = parseInt(dateStr.substr(4, 2), 10);\n  const day = parseInt(dateStr.substr(6, 2), 10);\n  \n  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', \n                  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];\n  \n  const ordinal = (d) => {\n    if (d > 3 && d < 21) return d + 'th';\n    switch (d % 10) {\n      case 1: return d + 'st';\n      case 2: return d + 'nd';\n      case 3: return d + 'rd';\n      default: return d + 'th';\n    }\n  };\n  \n  return `${ordinal(day)} ${months[month - 1]}`;\n}\n\n// Helper to extract time from datetime string\nfunction extractTime(dt) {\n  if (dt && dt.includes('T')) {\n    const hour = dt.substr(9, 2);\n    const minute = dt.substr(11, 2);\n    return `${hour}:${minute}`;\n  }\n  return '';\n}\n\nfor (const item of items) {\n  const icsContent = item.json.output || item.json.text || '';\n  const contactId = item.json.contactId || $('When Executed by Another Workflow').item.json.contactId;\n  \n  const veventMatches = icsContent.match(/BEGIN:VEVENT[\\s\\S]*?END:VEVENT/g) || [];\n  \n  for (const vevent of veventMatches) {\n    // Extract UID\n    const uidMatch = vevent.match(/UID:(.+)/);\n    const uid = uidMatch ? uidMatch[1].trim() : `event-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;\n    \n    // Extract SUMMARY\n    const summaryMatch = vevent.match(/SUMMARY:(.+)/);\n    const summary = summaryMatch ? summaryMatch[1].trim() : 'Untitled Event';\n    \n    // Extract DTSTART\n    const dtstartMatch = vevent.match(/DTSTART[^:]*:(\\d{8}T?\\d{0,6})/);\n    let startTime = '';\n    let dateStr = '';\n    \n    if (dtstartMatch) {\n      const dt = dtstartMatch[1];\n      dateStr = formatDate(dt);\n      startTime = extractTime(dt);\n    }\n    \n    // Extract DTEND\n    const dtendMatch = vevent.match(/DTEND[^:]*:(\\d{8}T?\\d{0,6})/);\n    let endTime = '';\n    \n    if (dtendMatch) {\n      endTime = extractTime(dtendMatch[1]);\n    }\n    \n    // Rebuild complete ICS for this single event\n    const header = icsContent.match(/BEGIN:VCALENDAR[\\s\\S]*?(?=BEGIN:VEVENT)/)?.[0] || \n      'BEGIN:VCALENDAR\\nVERSION:2.0\\nPRODID:-//Second Brain//EN\\n';\n    const singleIcs = header + vevent + '\\nEND:VCALENDAR';\n    \n    results.push({\n      json: {\n        uid,\n        output: singleIcs,\n        summary,\n        startTime,\n        endTime,\n        date: dateStr,\n        contactId\n      }\n    });\n  }\n}\n\nif (results.length === 0) {\n  return items;\n}\n\nreturn results;"
+        "jsCode": "/**\n * Split_ICS_Events - ICS Parser and Splitter\n * \n * Workflow: calendar_agent\n * Node: Split_ICS_Events\n * \n * Purpose: Takes ICS output from AI model and splits into individual events.\n *          Handles literal \\n characters from AI output and extracts metadata\n *          for each event (summary, times, UID).\n * \n * Input: AI model output with ICS content\n * Output: Array of individual events with uid, output (ICS), summary, times\n * \n * Last updated: 2026-01-25\n */\n\nconst items = $input.all();\nconst results = [];\n\n// Helper to format date nicely\nfunction formatDate(dateStr) {\n  const year = dateStr.substr(0, 4);\n  const month = parseInt(dateStr.substr(4, 2), 10);\n  const day = parseInt(dateStr.substr(6, 2), 10);\n  \n  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', \n                  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];\n  \n  const ordinal = (d) => {\n    if (d > 3 && d < 21) return d + 'th';\n    switch (d % 10) {\n      case 1: return d + 'st';\n      case 2: return d + 'nd';\n      case 3: return d + 'rd';\n      default: return d + 'th';\n    }\n  };\n  \n  return `${ordinal(day)} ${months[month - 1]}`;\n}\n\n// Helper to extract time from datetime string\nfunction extractTime(dt) {\n  if (dt && dt.includes('T')) {\n    const hour = dt.substr(9, 2);\n    const minute = dt.substr(11, 2);\n    return `${hour}:${minute}`;\n  }\n  return '';\n}\n\nfor (const item of items) {\n  // Get ICS content and normalize newlines\n  let icsContent = item.json.content || item.json.output || item.json.text || '';\n  \n  // CRITICAL: Convert literal \\n to actual newlines\n  icsContent = icsContent.replace(/\\\\n/g, '\\n');\n  \n  // Also handle \\r\\n and normalize to \\n\n  icsContent = icsContent.replace(/\\r\\n/g, '\\n').replace(/\\r/g, '\\n');\n  \n  const contactId = item.json.contactId || $('When Executed by Another Workflow').item.json.contactId;\n  \n  const veventMatches = icsContent.match(/BEGIN:VEVENT[\\s\\S]*?END:VEVENT/g) || [];\n  \n  for (const vevent of veventMatches) {\n    // Extract UID\n    const uidMatch = vevent.match(/UID:(.+)/);\n    const uid = uidMatch ? uidMatch[1].trim() : `event-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;\n    \n    // Extract SUMMARY\n    const summaryMatch = vevent.match(/SUMMARY:(.+)/);\n    const summary = summaryMatch ? summaryMatch[1].trim() : 'Untitled Event';\n    \n    // Extract DTSTART\n    const dtstartMatch = vevent.match(/DTSTART[^:]*:(\\d{8}T?\\d{0,6})/);\n    let startTime = '';\n    let dateStr = '';\n    \n    if (dtstartMatch) {\n      const dt = dtstartMatch[1];\n      dateStr = formatDate(dt);\n      startTime = extractTime(dt);\n    }\n    \n    // Extract DTEND\n    const dtendMatch = vevent.match(/DTEND[^:]*:(\\d{8}T?\\d{0,6})/);\n    let endTime = '';\n    \n    if (dtendMatch) {\n      endTime = extractTime(dtendMatch[1]);\n    }\n    \n    // Rebuild complete ICS for this single event with proper newlines\n    const singleIcs = `BEGIN:VCALENDAR\nVERSION:2.0\nPRODID:-//n8n AI//SecondBrain//EN\nCALSCALE:GREGORIAN\n${vevent}\nEND:VCALENDAR`;\n    \n    results.push({\n      json: {\n        uid,\n        output: singleIcs,\n        summary,\n        startTime,\n        endTime,\n        date: dateStr,\n        contactId\n      }\n    });\n  }\n}\n\nif (results.length === 0) {\n  return items;\n}\n\nreturn results;"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        384,
-        -208
+        576,
+        0
       ],
-      "id": "1b29facd-74f9-41d6-8690-4812d3e634ec",
+      "id": "18830f5d-6da3-4af3-ade1-925ceb972fdb",
       "name": "Split_ICS_Events"
     },
     {
@@ -113,11 +70,45 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        832,
-        -208
+        1024,
+        0
       ],
-      "id": "0f402c5e-469f-4048-955b-7b9ba1558a18",
+      "id": "f65ed02e-5416-415e-a638-6e5245eb109d",
       "name": "Aggregate_Results"
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "gemma3:12b",
+          "mode": "list",
+          "cachedResultName": "gemma3:12b"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "=JSON:\n{{ JSON.stringify($json)}}"
+            }
+          ]
+        },
+        "options": {
+          "system": "=/**\n * AI ICS Generator - System Prompt\n * \n * Workflow: calendar_agent\n * Node: Message a model (AI Agent)\n * \n * Purpose: Instructs AI to generate RFC 5545 iCalendar (ICS) text\n *          from natural language calendar requests.\n * \n * Last updated: 2026-01-26\n */\n\nYou generate RFC 5545 iCalendar (ICS) text. Output ONLY raw ICS, no markdown, no explanations.\n\nTIMEZONE: Europe/London (use TZID parameter for DTSTART/DTEND, except all-day events)\n\nOUTPUT FORMAT (timed events):\nBEGIN:VCALENDAR\nVERSION:2.0\nPRODID:-//n8n AI//SecondBrain//EN\nCALSCALE:GREGORIAN\nBEGIN:VEVENT\nUID:<date>-<start>-<end>-<summary-slug>@secondbrain\nDTSTAMP:<now in UTC with Z>\nDTSTART;TZID=Europe/London:<YYYYMMDDTHHMMSS>\nDTEND;TZID=Europe/London:<YYYYMMDDTHHMMSS>\nSUMMARY:<event title>\nDESCRIPTION:Added via SimpleX\nEND:VEVENT\nEND:VCALENDAR\n\nOUTPUT FORMAT (all-day events):\nBEGIN:VCALENDAR\nVERSION:2.0\nPRODID:-//n8n AI//SecondBrain//EN\nCALSCALE:GREGORIAN\nBEGIN:VEVENT\nUID:<date>-allday-<summary-slug>@secondbrain\nDTSTAMP:<now in UTC with Z>\nDTSTART;VALUE=DATE:<YYYYMMDD>\nDTEND;VALUE=DATE:<YYYYMMDD+1>\nSUMMARY:<event title>\nDESCRIPTION:Added via SimpleX\nEND:VEVENT\nEND:VCALENDAR\n\nTIME RULES:\n1. Explicit start AND end given (\"2pm-4pm\") → use exactly\n2. Only start time, no end (\"at 3pm\", \"landing at 7:20\") → zero duration (DTEND = DTSTART)\n3. No time at all (\"meeting on Friday\") → default 09:00-10:00 (1 hour)\n4. \"all day\", \"whole day\", \"birthday\", \"anniversary\", \"holiday\" → use VALUE=DATE format, DTEND = next day\n\nRECURRING EVENTS:\nWhen asked for repeating events (\"every Monday\", \"weekly until\", \"each Wednesday from X to Y\"):\n- Calculate ALL occurrences between start and end dates\n- Generate a separate VEVENT for each occurrence\n- Never truncate or stop early - include every single date\n- Maximum 52 occurrences (1 year of weekly events)\n\nROTA DEFAULTS (if type detected):\n- day → 08:00-20:30\n- night → 20:00-08:30 next day\n- oncall → 08:00-08:00 next day\n- am_list → 08:00-13:00\n- pm_list → 13:00-17:30\n\nUID FORMAT:\nTimed: <YYYYMMDD>-<HHMM>-<HHMM>-<summary-lowercase-hyphens>@secondbrain\nAll-day: <YYYYMMDD>-allday-<summary-lowercase-hyphens>@secondbrain\n\nESCAPING:\n- Newlines in DESCRIPTION → \\n\n- Commas → \\,\n- Semicolons → \\;\n\nEXAMPLES:\n\nInput: \"meeting at 3pm tomorrow\"\nOutput:\nBEGIN:VCALENDAR\nVERSION:2.0\nPRODID:-//n8n AI//SecondBrain//EN\nCALSCALE:GREGORIAN\nBEGIN:VEVENT\nUID:20260127-1500-1500-meeting@secondbrain\nDTSTAMP:20260126T110000Z\nDTSTART;TZID=Europe/London:20260127T150000\nDTEND;TZID=Europe/London:20260127T150000\nSUMMARY:Meeting\nDESCRIPTION:Added via SimpleX\nEND:VEVENT\nEND:VCALENDAR\n\nInput: \"lunch 12pm-1pm on Friday\"\nOutput:\nBEGIN:VCALENDAR\nVERSION:2.0\nPRODID:-//n8n AI//SecondBrain//EN\nCALSCALE:GREGORIAN\nBEGIN:VEVENT\nUID:20260131-1200-1300-lunch@secondbrain\nDTSTAMP:20260126T110000Z\nDTSTART;TZID=Europe/London:20260131T120000\nDTEND;TZID=Europe/London:20260131T130000\nSUMMARY:Lunch\nDESCRIPTION:Added via SimpleX\nEND:VEVENT\nEND:VCALENDAR\n\nInput: \"Vic's birthday, all day on 11th Feb\"\nOutput:\nBEGIN:VCALENDAR\nVERSION:2.0\nPRODID:-//n8n AI//SecondBrain//EN\nCALSCALE:GREGORIAN\nBEGIN:VEVENT\nUID:20260211-allday-vics-birthday@secondbrain\nDTSTAMP:20260126T110000Z\nDTSTART;VALUE=DATE:20260211\nDTEND;VALUE=DATE:20260212\nSUMMARY:Vic's birthday\nDESCRIPTION:Added via SimpleX\nEND:VEVENT\nEND:VCALENDAR\n\nInput: \"add dentist on the 15th and haircut on the 20th\"\nOutput:\nBEGIN:VCALENDAR\nVERSION:2.0\nPRODID:-//n8n AI//SecondBrain//EN\nCALSCALE:GREGORIAN\nBEGIN:VEVENT\nUID:20260215-0900-1000-dentist@secondbrain\nDTSTAMP:20260126T110000Z\nDTSTART;TZID=Europe/London:20260215T090000\nDTEND;TZID=Europe/London:20260215T100000\nSUMMARY:Dentist\nDESCRIPTION:Added via SimpleX\nEND:VEVENT\nBEGIN:VEVENT\nUID:20260220-0900-1000-haircut@secondbrain\nDTSTAMP:20260126T110000Z\nDTSTART;TZID=Europe/London:20260220T090000\nDTEND;TZID=Europe/London:20260220T100000\nSUMMARY:Haircut\nDESCRIPTION:Added via SimpleX\nEND:VEVENT\nEND:VCALENDAR\n\nInput: \"team meeting every Monday 9am-10am from 3rd Feb until end of March\"\nOutput:\nBEGIN:VCALENDAR\nVERSION:2.0\nPRODID:-//n8n AI//SecondBrain//EN\nCALSCALE:GREGORIAN\nBEGIN:VEVENT\nUID:20260203-0900-1000-team-meeting@secondbrain\nDTSTAMP:20260126T110000Z\nDTSTART;TZID=Europe/London:20260203T090000\nDTEND;TZID=Europe/London:20260203T100000\nSUMMARY:Team meeting\nDESCRIPTION:Added via SimpleX\nEND:VEVENT\nBEGIN:VEVENT\nUID:20260210-0900-1000-team-meeting@secondbrain\nDTSTAMP:20260126T110000Z\nDTSTART;TZID=Europe/London:20260210T090000\nDTEND;TZID=Europe/London:20260210T100000\nSUMMARY:Team meeting\nDESCRIPTION:Added via SimpleX\nEND:VEVENT\nBEGIN:VEVENT\nUID:20260217-0900-1000-team-meeting@secondbrain\nDTSTAMP:20260126T110000Z\nDTSTART;TZID=Europe/London:20260217T090000\nDTEND;TZID=Europe/London:20260217T100000\nSUMMARY:Team meeting\nDESCRIPTION:Added via SimpleX\nEND:VEVENT\nBEGIN:VEVENT\nUID:20260224-0900-1000-team-meeting@secondbrain\nDTSTAMP:20260126T110000Z\nDTSTART;TZID=Europe/London:20260224T090000\nDTEND;TZID=Europe/London:20260224T100000\nSUMMARY:Team meeting\nDESCRIPTION:Added via SimpleX\nEND:VEVENT\nBEGIN:VEVENT\nUID:20260302-0900-1000-team-meeting@secondbrain\nDTSTAMP:20260126T110000Z\nDTSTART;TZID=Europe/London:20260302T090000\nDTEND;TZID=Europe/London:20260302T100000\nSUMMARY:Team meeting\nDESCRIPTION:Added via SimpleX\nEND:VEVENT\nBEGIN:VEVENT\nUID:20260309-0900-1000-team-meeting@secondbrain\nDTSTAMP:20260126T110000Z\nDTSTART;TZID=Europe/London:20260309T090000\nDTEND;TZID=Europe/London:20260309T100000\nSUMMARY:Team meeting\nDESCRIPTION:Added via SimpleX\nEND:VEVENT\nBEGIN:VEVENT\nUID:20260316-0900-1000-team-meeting@secondbrain\nDTSTAMP:20260126T110000Z\nDTSTART;TZID=Europe/London:20260316T090000\nDTEND;TZID=Europe/London:20260316T100000\nSUMMARY:Team meeting\nDESCRIPTION:Added via SimpleX\nEND:VEVENT\nBEGIN:VEVENT\nUID:20260323-0900-1000-team-meeting@secondbrain\nDTSTAMP:20260126T110000Z\nDTSTART;TZID=Europe/London:20260323T090000\nDTEND;TZID=Europe/London:20260323T100000\nSUMMARY:Team meeting\nDESCRIPTION:Added via SimpleX\nEND:VEVENT\nBEGIN:VEVENT\nUID:20260330-0900-1000-team-meeting@secondbrain\nDTSTAMP:20260126T110000Z\nDTSTART;TZID=Europe/London:20260330T090000\nDTEND;TZID=Europe/London:20260330T100000\nSUMMARY:Team meeting\nDESCRIPTION:Added via SimpleX\nEND:VEVENT\nEND:VCALENDAR\n\nCRITICAL RULES:\n- ALWAYS output at least one VEVENT if any event is requested\n- For timed events: use TZID=Europe/London for DTSTART and DTEND\n- For all-day events: use VALUE=DATE (no time, no TZID), DTEND is next day\n- For recurring events: generate ALL occurrences (up to 52 max) - never truncate\n- NEVER use Z suffix on DTSTART/DTEND\n- NEVER output markdown or explanations\n- Output starts with BEGIN:VCALENDAR, ends with END:VCALENDAR"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.ollama",
+      "typeVersion": 1,
+      "position": [
+        224,
+        0
+      ],
+      "id": "7742f979-a975-4404-9ae5-ed471a8835ff",
+      "name": "AI ICS Generator",
+      "credentials": {
+        "ollamaApi": {
+          "id": "I5p9YNA47JCP3MB1",
+          "name": "Ollama local"
+        }
+      }
     }
   ],
   "pinData": {
@@ -136,33 +127,11 @@
     ]
   },
   "connections": {
-    "OpenAI Chat Model": {
-      "ai_languageModel": [
-        [
-          {
-            "node": "AI Agent_ICS_generator",
-            "type": "ai_languageModel",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "AI Agent_ICS_generator": {
-      "main": [
-        [
-          {
-            "node": "Split_ICS_Events",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
     "When Executed by Another Workflow": {
       "main": [
         [
           {
-            "node": "AI Agent_ICS_generator",
+            "node": "AI ICS Generator",
             "type": "main",
             "index": 0
           }
@@ -190,6 +159,17 @@
           }
         ]
       ]
+    },
+    "AI ICS Generator": {
+      "main": [
+        [
+          {
+            "node": "Split_ICS_Events",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "active": true,
@@ -197,11 +177,11 @@
     "executionOrder": "v1",
     "availableInMCP": false
   },
-  "versionId": "5b1096b3-b950-4df4-805d-aaef9fd75e37",
+  "versionId": "fcf5140d-25ff-4d60-946c-1f1da455aee4",
   "meta": {
     "templateCredsSetupCompleted": true,
-    "instanceId": "6dd52e1127a8323eea11f39646bff42e584259ad6d872e077809aa55e4ff2415"
+    "instanceId": "a5af9c56908a68ed8b8b4eedf2ab29753e321c82b755d88674ae79dcfc198c21"
   },
-  "id": "a6OVZcblBcUy66iu",
+  "id": "NBGxXNizyKNbxJ7a0k6sD",
   "tags": []
 }
