@@ -50,10 +50,30 @@ docker logs ollama --since <window> 2>&1 | grep -iE "loading model|gpu memory|sy
 
 **Fix / mitigation:** A full host reboot resolved it immediately — first request after reboot landed cleanly at `100% GPU`, confirmed via `ollama ps` and `nvidia-smi` showing `ollama` process at ~9.6GB VRAM with 93% GPU-Util.
 
-**Open question, not yet tested:** whether a full host reboot is actually necessary, or whether `docker restart ollama` alone is enough to clear the fragmentation. This matters for how to automate the mitigation:
-- If a **container restart** is sufficient → the fragmentation lives in Ollama's own long-lived CUDA context, and a scheduled `docker restart ollama` (e.g. nightly cron) is a cheap, non-disruptive fix.
-- If only a **host reboot** works → the fragmentation comes from the wider desktop session and needs a host-level reboot cadence instead.
+**Update (2026-08-22):** Symptom recurred. This time, `docker restart ollama` alone (no host reboot) resolved it — first request after the container restart landed cleanly on GPU. This narrows the root cause: since `OLLAMA_MAX_LOADED_MODELS:1` means Ollama constantly loads/evicts `gemma3:12b` and `qwen3.5:9b` on every intent switch, the fragmentation most likely accumulates inside Ollama's own long-lived CUDA context from that repeated churn — not from the wider desktop session (Xorg/Firefox/etc.) as originally suspected. A full host reboot "worked" the first time only because it resets the container too, not because the desktop was the actual source.
 
-Next time the symptom recurs, try `docker restart ollama` first before reaching for a full reboot, and update this entry with the result.
+**Caveat:** n=1 on the container-only fix so far. Treat as a strong lead, not yet fully confirmed — watch for whether it holds on the next recurrence before relying on it.
 
-**Status:** Monitoring. Root cause understood and a working (if heavyweight) fix confirmed; permanent/automated mitigation not yet decided or implemented.
+**Practical mitigation, pending further confirmation:** a scheduled `docker restart ollama` (e.g. nightly cron) is looking like a viable, low-disruption fix — cheaper than a host reboot cadence since it doesn't touch the desktop session at all.
+
+**Status:** Monitoring. Root cause understood; likely mitigation identified (container restart) but not yet confirmed on repeat occurrence or automated.
+
+---
+
+## ICS DTSTAMP off by one hour — no BST/UTC conversion
+
+**Date found:** 2026-08-22
+
+**Symptom:** Generated ICS events have a `DTSTAMP` value that's numerically identical to the `nowStamp` input field, just with a `Z` appended (e.g. input `nowStamp: 20260822T161929` at 16:19 local time → output `DTSTAMP:20260822T161929Z`). Since Aug 22 is within British Summer Time (UTC+1), the correct UTC value should be `20260822T151929Z` — an hour earlier.
+
+**False leads ruled out:** None — found on first check, not from chasing a reported problem. Surfaced while reviewing the `AI ICS Generator` system prompt ahead of a model-tiering comparison, as a "confirm the baseline is actually correct before comparing a smaller model against it" check.
+
+**Root cause:** The system prompt instructs the model to output `DTSTAMP` as "now in UTC with Z," but `nowStamp` is passed in as local time with no timezone marker, and the model isn't doing the local→UTC conversion — it's just appending `Z` to whatever it's given. This almost certainly went unnoticed because the prompt's worked examples were all authored on 2026-01-26, during GMT (UTC+0) — when local time and UTC are numerically identical, so the bug produces a correct-looking answer all winter. It only became detectable once BST (UTC+1) took effect and the two clocks diverged.
+
+**Diagnostic:** Open any recent `AI ICS Generator` execution and compare the input `nowStamp` field against the output `DTSTAMP:` line. If they're numerically identical (same digits, output just has `Z` added) and the current date is within BST, the conversion isn't happening.
+
+**Fix / mitigation:** Not yet implemented. Planned approach: compute the correct UTC timestamp upstream in code (the same node that already builds `today`/`nowStamp`, e.g. via `new Date().toISOString()` reformatted to match) and pass it in as its own field, rather than asking the model to perform timezone arithmetic at all — same philosophy as moving recurring-event date enumeration into deterministic code (see model-tiering design brief).
+
+**Practical impact:** Low. `DTSTAMP` is bookkeeping metadata (when the entry was created) — it isn't displayed in any calendar view and doesn't affect scheduling. `DTSTART`/`DTEND` are unaffected, since those are built explicitly from `TZID=Europe/London` local time, not from `nowStamp`. Nothing actually scheduled is wrong; this only matters for anything that reads `DTSTAMP` directly, and for not misreading a smaller model's *correct* UTC math as a regression during tiering comparisons.
+
+**Status:** Workaround only (currently just known and worked around by ignoring `DTSTAMP` accuracy) — fix not yet implemented.
